@@ -1,0 +1,5 @@
+/target
+/.claude/
+*.db
+*.db-wal
+*.db-shm

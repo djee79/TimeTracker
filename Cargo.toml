@@ -1,0 +1,23 @@
+[package]
+name = "worklog"
+version = "0.1.0"
+edition = "2024"
+description = "A single-binary work journal with tasks, time tracking, and timesheet reports"
+license = "MIT"
+repository = "https://github.com/djee79/TimeTracker"
+
+[dependencies]
+chrono = { version = "0.4.45", features = ["serde"] }
+directories = "6.0.0"
+eframe = "0.35.0"
+egui = "0.35.0"
+egui_extras = { version = "0.35.0", features = ["datepicker"] }
+jiff = "0.2.31"
+rfd = "0.17.2"
+rusqlite = { version = "0.40.1", features = ["bundled"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+
+[profile.release]
+lto = true
+strip = true
