@@ -1,0 +1,4 @@
+# Windows: link the C runtime statically so the release exe runs on machines
+# without the VC++ redistributable — copy worklog.exe anywhere and it works.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

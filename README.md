@@ -14,6 +14,29 @@ Everything else (tasks, time tracking, UI) exists to feed those two reports.
 cargo run --release        # binary lands in target/release/worklog
 ```
 
+### Windows
+
+1. Install Rust from <https://rustup.rs>. When `rustup-init.exe` offers to install the
+   **Visual Studio C++ Build Tools**, accept — the linker and the bundled SQLite are
+   compiled with them. (Already have Visual Studio? The "Desktop development with C++"
+   workload is what's needed.)
+2. Build:
+
+   ```bat
+   git clone https://github.com/djee79/TimeTracker.git
+   cd TimeTracker
+   cargo build --release
+   ```
+
+3. The result is `target\release\worklog.exe` — fully self-contained: SQLite is
+   compiled in and the C runtime is statically linked (see `.cargo/config.toml`),
+   so you can copy the single exe to any Windows 10/11 machine, no installer or
+   redistributable required. Pin it to the taskbar or drop a shortcut in
+   `shell:startup` to launch it at login.
+4. The release build opens no console window, and the database lands in
+   `%APPDATA%\worklog\data\worklog.db` (with daily snapshots in `backups\` beside it) —
+   the exact path is always shown in the app's status bar.
+
 Data lives in a single SQLite file (WAL mode, foreign keys on):
 `~/.local/share/worklog/worklog.db` — snapshot that file and you've backed up everything.
 The path is always visible in the app's status bar. The app also snapshots it for you:
