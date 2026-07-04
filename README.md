@@ -8,6 +8,19 @@ A single-binary work journal that also does to-dos. Built around two outputs:
 
 Everything else (tasks, time tracking, UI) exists to feed those two reports.
 
+## Install
+
+Grab a prebuilt binary from the [Releases page](https://github.com/djee79/TimeTracker/releases):
+
+- `worklog-windows-x86_64.exe` — fully self-contained (static CRT, SQLite compiled in);
+  copy it anywhere on a Windows 10/11 machine and run it. No installer.
+- `worklog-linux-x86_64` — built on the latest Ubuntu LTS runner; needs a comparably
+  recent glibc. `chmod +x` and run. If your distro is older, build from source instead.
+
+Releases are cut by pushing a version tag (`git tag v0.1.1 && git push origin v0.1.1`) —
+GitHub Actions tests, builds both binaries, and attaches them
+(`.github/workflows/release.yml`).
+
 ## Build & run
 
 ```sh
