@@ -339,6 +339,7 @@ mod tests {
         // the snapshot is a valid database with the data in it
         let copy = Db::open(path).unwrap();
         assert_eq!(copy.list_projects().unwrap().len(), 1);
+        drop(copy); // Windows can't delete a file something still has open
         // second call the same day is a no-op
         assert_eq!(db.backup_daily(10).unwrap(), None);
 
@@ -365,6 +366,7 @@ mod tests {
         assert_eq!(names.len(), 2);
         assert_eq!(names[1], kept.file_name().unwrap().to_string_lossy());
 
+        drop(db); // close the live database before deleting the directory
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
