@@ -87,6 +87,8 @@ fn journal(ui_: &mut egui::Ui) {
     b(ui_, "The “N entries, X h” counter follows the filters — search a topic to see its total hours.");
     b(ui_, "✏ edits an entry in place (its creation stamp never changes); 🗑 asks once, then deletes.");
     b(ui_, "The status bar always shows “today: X h” — an end-of-day check that nothing was forgotten.");
+    b(ui_, "The “notes panel” checkbox shows the selected task's notes beside the journal — handy while writing up what you did.");
+    b(ui_, "Entries logged from a task remember it: click the entry's text to pull that task's notes into the panel.");
 }
 
 fn tasks(ui_: &mut egui::Ui) {
@@ -99,6 +101,10 @@ fn tasks(ui_: &mut egui::Ui) {
     b(ui_, "⏸ pause — back to to-do; ⏺ focus — make an in-progress task the active one again after an interruption.");
     b(ui_, "⏱ log — log the time tracked so far without closing the task (see Time tracking).");
     b(ui_, "The checkbox marks it done and opens the “log the time?” strip.");
+    b(ui_, "✏ (or double-clicking the title) edits the title in place — Enter saves, Esc cancels.");
+    b(ui_, "📄 opens the task's notes: freeform Markdown (**bold**, # headings, - lists, `code`…) with an Edit/Preview toggle. Closing the window saves.");
+    b(ui_, "The editor has a formatting toolbar — select text and click bold/italic/heading/list/etc. (Ctrl+B / Ctrl+I work too). Buttons toggle: click again to unformat.");
+    b(ui_, "Hover 📄 for a quick rendered peek; the “notes panel” checkbox keeps the clicked task's notes beside the list.");
     b(ui_, "Order “auto” sorts itself: active, in progress, priority, newest. Order “manual” lets you drag the ☰ grip. “Group by project” splits the list per project.");
 }
 
@@ -133,7 +139,7 @@ fn completed(ui_: &mut egui::Ui) {
         "Finished tasks collect in the “Completed” section at the bottom of the Tasks screen, \
          newest first.",
     );
-    b(ui_, "Filter by text (title or project code) and by completion date — it defaults to the last 30 days; switch to “all” to dig further back.");
+    b(ui_, "Filter by text (title, project code or notes) and by completion date — it defaults to the last 30 days; switch to “all” to dig further back.");
     b(ui_, "↺ reopens a task as to-do; its previously tracked time comes back with it.");
     b(ui_, "The section keeps its open state, so you can reopen several tasks in a row.");
 }
@@ -143,6 +149,8 @@ fn reports(ui_: &mut egui::Ui) {
     b(ui_, "Click any cell to copy it; “Copy full week” and “Export CSV…” take the whole week.");
     p(ui_, "Annual dev export (SR&ED) — every entry marked “dev” for a year, as CSV: date, project code, project name, description, hours.");
     b(ui_, "Entries keep an immutable creation stamp, so the export doubles as contemporaneity evidence.");
+    p(ui_, "Both reports also export as PDF — a print-ready layout grouped by project.");
+    b(ui_, "“PDF with task notes” includes each entry's task notes (rendered markdown) under it; a task logged several times has its notes printed once.");
 }
 
 fn shortcuts(ui_: &mut egui::Ui) {
@@ -169,4 +177,5 @@ fn data(ui_: &mut egui::Ui) {
     );
     b(ui_, "The app also does it for you: on the first launch of each day it snapshots the database into the “backups” folder next to it, keeping the 10 most recent.");
     b(ui_, "To restore, close the app and copy a snapshot over worklog.db.");
+    b(ui_, "Maintenance is automatic: every launch runs a quick integrity check (a red warning appears in the status bar if it ever fails — restore a backup), the file is compacted monthly, and SQLite tunes itself up on exit. One database holds everything, for all years — at this app's scale SQLite is nowhere near its limits, and keeping history together is what makes search and the annual export work.");
 }

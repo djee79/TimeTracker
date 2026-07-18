@@ -76,6 +76,8 @@ pub struct Task {
     pub id: i64,
     pub project_id: i64,
     pub title: String,
+    /// Freeform markdown notes ("" = none).
+    pub details: String,
     pub status: TaskStatus,
     pub priority: Priority,
     pub created_at: DateTime<Utc>,
@@ -116,10 +118,11 @@ fn from_row(row: &Row) -> rusqlite::Result<Task> {
         priority: Priority::from_i64(row.get(7)?),
         started_at: started_at.and_then(|s| s.parse().ok()),
         spent_secs: row.get(9)?,
+        details: row.get(10)?,
     })
 }
 
-const SELECT: &str = "SELECT t.id, t.project_id, t.title, t.status, t.created_at, t.completed_at, p.code, t.priority, t.started_at, t.spent_secs
+const SELECT: &str = "SELECT t.id, t.project_id, t.title, t.status, t.created_at, t.completed_at, p.code, t.priority, t.started_at, t.spent_secs, t.details
  FROM tasks t JOIN projects p ON p.id = t.project_id";
 
 /// Second-precision RFC3339 — what SQLite's strftime('%s', …) parses cleanly.
@@ -136,6 +139,29 @@ impl Db {
             rusqlite::params![project_id, title, Utc::now().to_rfc3339(), priority as i64],
         )?;
         Ok(self.conn.last_insert_rowid())
+    }
+
+    /// One task by id, open or done. None if it was deleted.
+    pub fn task(&self, id: i64) -> Result<Option<Task>> {
+        let mut stmt = self.conn.prepare(&format!("{SELECT} WHERE t.id = ?1"))?;
+        let mut rows = stmt.query_map([id], from_row)?;
+        rows.next().transpose()
+    }
+
+    pub fn set_task_title(&self, id: i64, title: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE tasks SET title = ?2 WHERE id = ?1",
+            rusqlite::params![id, title],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_task_details(&self, id: i64, details: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE tasks SET details = ?2 WHERE id = ?1",
+            rusqlite::params![id, details],
+        )?;
+        Ok(())
     }
 
     pub fn set_task_priority(&self, id: i64, priority: Priority) -> Result<()> {
@@ -259,7 +285,7 @@ impl Db {
 
     /// Completed tasks, most recently finished first. `since` bounds the
     /// completion date (local time); every whitespace-separated word of
-    /// `search` must appear in the title or project code, in any order.
+    /// `search` must appear in the title, project code or notes, in any order.
     /// Filtering happens in SQL so a years-old backlog stays cheap to show.
     pub fn list_done_tasks(
         &self,
@@ -274,8 +300,9 @@ impl Db {
             params.push(Box::new(since.to_string()));
         }
         for term in search.split_whitespace() {
-            sql.push_str(" AND (t.title LIKE ? OR p.code LIKE ?)");
+            sql.push_str(" AND (t.title LIKE ? OR p.code LIKE ? OR t.details LIKE ?)");
             let pattern = format!("%{term}%");
+            params.push(Box::new(pattern.clone()));
             params.push(Box::new(pattern.clone()));
             params.push(Box::new(pattern));
         }

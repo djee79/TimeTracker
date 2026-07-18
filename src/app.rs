@@ -59,6 +59,9 @@ pub struct EntryForm {
     pub hours_text: String,
     pub is_dev: bool,
     pub work_date: NaiveDate,
+    /// Task this entry is logged from (set by the bridge) — stored so the
+    /// journal can pull up the task's notes later.
+    pub task_id: Option<i64>,
 }
 
 impl EntryForm {
@@ -69,6 +72,7 @@ impl EntryForm {
             hours_text: String::new(),
             is_dev: false,
             work_date,
+            task_id: None,
         }
     }
 
@@ -79,6 +83,7 @@ impl EntryForm {
             hours_text: report::fmt_hours(row.entry.hours),
             is_dev: row.entry.is_dev,
             work_date: row.entry.work_date,
+            task_id: row.entry.task_id,
         }
     }
 
@@ -129,6 +134,18 @@ pub struct PendingLog {
     pub form: EntryForm,
 }
 
+/// State of the task-notes window: one task's markdown details being
+/// viewed or edited. Closing the window saves.
+pub struct TaskDetails {
+    pub task_id: i64,
+    pub task_title: String,
+    pub text: String,
+    /// Last saved copy — drives the "unsaved" hint.
+    pub saved: String,
+    /// Rendered view vs the raw-markdown editor.
+    pub preview: bool,
+}
+
 /// Add/edit form state for the Projects window.
 #[derive(Default)]
 pub struct ProjectForm {
@@ -161,6 +178,16 @@ pub struct WorklogApp {
     pub done_tasks: Vec<Task>,
     pub pending_log: Option<PendingLog>,
     pub confirm_delete_task: Option<i64>,
+    /// Task being renamed in place: (id, edit buffer).
+    pub editing_task: Option<(i64, String)>,
+    /// The task-notes window, when open.
+    pub task_details: Option<TaskDetails>,
+    /// Task whose notes the side panel shows (falls back to the active task).
+    pub selected_task_id: Option<i64>,
+    /// Show the notes side panel on the Tasks screen. Persisted.
+    pub show_notes_panel: bool,
+    /// Layout cache for rendered markdown (egui_commonmark).
+    pub md_cache: egui_commonmark::CommonMarkCache,
     /// Live text filter for the Completed section (title/project, any order).
     pub done_filter: String,
     /// How far back the Completed section looks.
@@ -177,6 +204,8 @@ pub struct WorklogApp {
     pub week_start: NaiveDate,
     weekly_cache: Option<(NaiveDate, u64, WeeklyReport)>,
     pub report_year: i32,
+    /// PDF exports include the linked task's notes under each entry. Persisted.
+    pub pdf_include_notes: bool,
 
     // Projects window
     pub show_projects: bool,
@@ -186,6 +215,9 @@ pub struct WorklogApp {
     pub show_help: bool,
 
     // Misc
+    /// Persistent red flag in the status bar (integrity check failed) —
+    /// unlike `status`, it doesn't fade after 5 s.
+    pub db_warning: Option<String>,
     data_version: u64,
     /// Hours logged today, cached per (day, data_version) for the status bar.
     today_hours: Option<(NaiveDate, u64, f64)>,
@@ -215,6 +247,11 @@ impl WorklogApp {
             done_tasks: Vec::new(),
             pending_log: None,
             confirm_delete_task: None,
+            editing_task: None,
+            task_details: None,
+            selected_task_id: None,
+            show_notes_panel: false,
+            md_cache: egui_commonmark::CommonMarkCache::default(),
             done_filter: String::new(),
             done_range: FilterRange::Days30,
             active_task_id: None,
@@ -223,9 +260,11 @@ impl WorklogApp {
             week_start: report::week_start_of(today),
             weekly_cache: None,
             report_year: today.year(),
+            pdf_include_notes: true,
             show_projects: false,
             project_form: ProjectForm::default(),
             show_help: false,
+            db_warning: None,
             data_version: 0,
             today_hours: None,
             status: None,
@@ -237,9 +276,24 @@ impl WorklogApp {
             Ok(None) => {}
             Err(e) => app.set_status(format!("Backup failed: {e}")),
         }
+        // Maintenance: corruption is caught while the backups still hold good
+        // data; the monthly vacuum keeps the file compact after deletions.
+        match app.db.integrity_check() {
+            Ok(None) => {
+                let _ = app.db.vacuum_monthly();
+            }
+            Ok(Some(report)) => {
+                app.db_warning = Some(format!(
+                    "⚠ database check failed: {report} — restore a backup soon"
+                ));
+            }
+            Err(e) => app.db_warning = Some(format!("⚠ database check failed: {e}")),
+        }
         app.reload_projects();
         app.reload_entries();
         app.group_tasks = app.db.setting("group_tasks").as_deref() == Some("1");
+        app.show_notes_panel = app.db.setting("notes_panel").as_deref() == Some("1");
+        app.pdf_include_notes = app.db.setting("pdf_notes").as_deref() != Some("0");
         if app.db.setting("task_sort").as_deref() == Some("manual") {
             app.task_sort = TaskSort::Manual;
         }
@@ -366,6 +420,25 @@ impl WorklogApp {
         self.reload_tasks();
     }
 
+    /// Open the inline title editor on a task row.
+    pub fn start_task_edit(&mut self, task: &Task) {
+        self.editing_task = Some((task.id, task.title.clone()));
+        self.confirm_delete_task = None;
+        self.request_focus(ui::FOCUS_TASK_EDIT);
+    }
+
+    /// Open the notes window on a task. Starts in the rendered view when
+    /// there's something to read, in the editor when the notes are empty.
+    pub fn open_task_details(&mut self, task: &Task) {
+        self.task_details = Some(TaskDetails {
+            task_id: task.id,
+            task_title: task.title.clone(),
+            text: task.details.clone(),
+            saved: task.details.clone(),
+            preview: !task.details.trim().is_empty(),
+        });
+    }
+
     pub fn set_active_task(&mut self, id: Option<i64>) {
         self.active_task_id = id;
         let value = id.map(|i| i.to_string()).unwrap_or_default();
@@ -421,6 +494,7 @@ impl WorklogApp {
             description,
             hours,
             form.is_dev,
+            form.task_id,
         ) {
             Ok(_) => {
                 let _ = self
@@ -480,6 +554,7 @@ impl WorklogApp {
             self.db.task_timer_totals(task.id).unwrap_or((0, 0));
         let mut form = EntryForm::new(Some(task.project_id), today());
         form.description = task.title.clone();
+        form.task_id = Some(task.id);
         self.pending_log = Some(PendingLog {
             task_title: task.title.clone(),
             tracked_secs,
@@ -536,6 +611,33 @@ impl WorklogApp {
         &self.weekly_cache.as_ref().unwrap().2
     }
 
+    /// Save-dialog + render for a built PDF document (or report the build
+    /// error), with a status message either way.
+    pub fn export_pdf(
+        &mut self,
+        suggested_name: &str,
+        doc: Result<genpdf::Document, String>,
+    ) {
+        let doc = match doc {
+            Ok(doc) => doc,
+            Err(e) => {
+                self.set_status(format!("Export failed: {e}"));
+                return;
+            }
+        };
+        let Some(path) = rfd::FileDialog::new()
+            .set_file_name(suggested_name)
+            .add_filter("PDF", &["pdf"])
+            .save_file()
+        else {
+            return;
+        };
+        match doc.render_to_file(&path) {
+            Ok(()) => self.set_status(format!("Exported {}", path.display())),
+            Err(e) => self.set_status(format!("Export failed: {e}")),
+        }
+    }
+
     /// Save-dialog + write, with a status message either way.
     pub fn export_csv(&mut self, suggested_name: &str, contents: &str) {
         let Some(path) = rfd::FileDialog::new()
@@ -557,9 +659,11 @@ pub fn today() -> NaiveDate {
 }
 
 impl Drop for WorklogApp {
-    /// Bank running task timers so time with the app closed isn't tracked.
+    /// Bank running task timers so time with the app closed isn't tracked,
+    /// and let SQLite run its close-time tune-up.
     fn drop(&mut self) {
         let _ = self.db.stop_all_task_timers(chrono::Utc::now());
+        self.db.optimize();
     }
 }
 
@@ -630,6 +734,13 @@ impl eframe::App for WorklogApp {
         // Status bar: message for 5 s, plus the DB path for backup peace of mind.
         egui::Panel::bottom(egui::Id::new("status")).show(root, |ui_| {
             ui_.horizontal(|ui_| {
+                if let Some(warning) = &self.db_warning {
+                    ui_.label(
+                        egui::RichText::new(warning)
+                            .color(ui_.visuals().error_fg_color)
+                            .strong(),
+                    );
+                }
                 if let Some((text, at)) = &self.status {
                     if at.elapsed().as_secs_f32() < 5.0 {
                         ui_.label(egui::RichText::new(text).strong());
@@ -664,6 +775,7 @@ impl eframe::App for WorklogApp {
         });
 
         ui::projects::show_window(self, &ctx);
+        ui::tasks::details_window(self, &ctx);
         ui::help::show_window(self, &ctx);
     }
 }

@@ -65,6 +65,11 @@ const MIGRATIONS: &[&str] = &[
      ALTER TABLE tasks ADD COLUMN spent_secs INTEGER NOT NULL DEFAULT 0;",
     // v5: longest unbroken timer stretch — flags forgot-the-timer totals
     "ALTER TABLE tasks ADD COLUMN max_stretch_secs INTEGER NOT NULL DEFAULT 0;",
+    // v6: freeform markdown notes per task
+    "ALTER TABLE tasks ADD COLUMN details TEXT NOT NULL DEFAULT '';",
+    // v7: the task a log entry came from (bridge-created entries only).
+    // Plain INTEGER, no FK: deleting a task must not orphan-block its entries.
+    "ALTER TABLE log_entries ADD COLUMN task_id INTEGER;",
 ];
 
 pub struct Db {
@@ -143,6 +148,37 @@ impl Db {
         Ok(Some(target))
     }
 
+    // -- maintenance --
+
+    /// SQLite's fast self-check. None = healthy; Some = what it reported.
+    /// Cheap at this database's size, so it runs on every launch to catch
+    /// silent file corruption (disk issues, bad copies) while the daily
+    /// backups still hold good data.
+    pub fn integrity_check(&self) -> Result<Option<String>> {
+        let report: String =
+            self.conn
+                .query_row("PRAGMA quick_check", [], |row| row.get(0))?;
+        Ok((report != "ok").then_some(report))
+    }
+
+    /// Compact the file (reclaims space freed by deleted rows) at most once
+    /// per month. Returns true when a vacuum actually ran.
+    pub fn vacuum_monthly(&self) -> Result<bool> {
+        let this_month = chrono::Local::now().format("%Y-%m").to_string();
+        if self.setting("last_vacuum").as_deref() == Some(this_month.as_str()) {
+            return Ok(false);
+        }
+        self.conn.execute_batch("VACUUM")?;
+        self.set_setting("last_vacuum", &this_month)?;
+        Ok(true)
+    }
+
+    /// SQLite's own tune-up (refreshes query-planner statistics) — the
+    /// documented best practice is to run it when closing the connection.
+    pub fn optimize(&self) {
+        let _ = self.conn.execute_batch("PRAGMA optimize");
+    }
+
     // -- app_settings: tiny key/value store (last-used project, UI prefs) --
 
     pub fn setting(&self, key: &str) -> Option<String> {
@@ -212,12 +248,12 @@ mod tests {
         let p1 = db.insert_project("AAA-001", "Alpha", None).unwrap();
         let p2 = db.insert_project("BBB-002", "Beta", Some("ACME")).unwrap();
 
-        db.insert_log_entry(d("2026-06-29"), p1, "alpha work", 2.5, true)
+        db.insert_log_entry(d("2026-06-29"), p1, "alpha work", 2.5, true, None)
             .unwrap();
-        db.insert_log_entry(d("2026-06-30"), p2, "beta work", 1.0, false)
+        db.insert_log_entry(d("2026-06-30"), p2, "beta work", 1.0, false, None)
             .unwrap();
         let id = db
-            .insert_log_entry(d("2026-05-01"), p1, "old work", 4.0, false)
+            .insert_log_entry(d("2026-05-01"), p1, "old work", 4.0, false, None)
             .unwrap();
 
         assert_eq!(db.list_log_entries(None, None, "").unwrap().len(), 3);
@@ -247,6 +283,13 @@ mod tests {
         let newer = db.insert_task(p, "newer doing", Priority::Normal).unwrap();
         db.set_task_status(newer, TaskStatus::Doing).unwrap();
 
+        db.set_task_title(older, "older todo, refined").unwrap();
+        let open = db.list_open_tasks(TaskSort::Auto).unwrap();
+        assert_eq!(
+            open.iter().find(|t| t.id == older).unwrap().title,
+            "older todo, refined"
+        );
+
         let open = db.list_open_tasks(TaskSort::Auto).unwrap();
         assert_eq!(open.len(), 2);
         // doing sorts above todo regardless of age
@@ -263,6 +306,56 @@ mod tests {
         assert!(db.list_done_tasks(10, None, "").unwrap().is_empty());
         let reopened = db.list_open_tasks(TaskSort::Auto).unwrap();
         assert!(reopened.iter().all(|t| t.completed_at.is_none()));
+    }
+
+    #[test]
+    fn maintenance_check_and_monthly_vacuum() {
+        let db = Db::open_in_memory().unwrap();
+        assert_eq!(db.integrity_check().unwrap(), None);
+        assert!(db.vacuum_monthly().unwrap()); // first run this month
+        assert!(!db.vacuum_monthly().unwrap()); // second is a no-op
+        db.optimize(); // must not error on a healthy db
+    }
+
+    #[test]
+    fn log_entry_remembers_its_task() {
+        let db = Db::open_in_memory().unwrap();
+        let p = db.insert_project("AAA-001", "Alpha", None).unwrap();
+        let t = db.insert_task(p, "the task", Priority::Normal).unwrap();
+        db.insert_log_entry(d("2026-07-18"), p, "from the bridge", 2.0, false, Some(t))
+            .unwrap();
+        db.insert_log_entry(d("2026-07-18"), p, "typed by hand", 1.0, false, None)
+            .unwrap();
+        let entries = db.list_log_entries(None, None, "").unwrap();
+        assert_eq!(entries.len(), 2);
+        let by_desc = |s: &str| {
+            entries.iter().find(|r| r.entry.description == s).unwrap().entry.task_id
+        };
+        assert_eq!(by_desc("from the bridge"), Some(t));
+        assert_eq!(by_desc("typed by hand"), None);
+        // the lookup the notes panel uses works for done tasks too
+        db.set_task_status(t, TaskStatus::Done).unwrap();
+        assert_eq!(db.task(t).unwrap().unwrap().title, "the task");
+        assert!(db.task(9999).unwrap().is_none());
+    }
+
+    #[test]
+    fn task_details_roundtrip_and_search() {
+        let db = Db::open_in_memory().unwrap();
+        let p = db.insert_project("AAA-001", "Alpha", None).unwrap();
+        let t = db.insert_task(p, "titled", Priority::Normal).unwrap();
+        assert_eq!(db.list_open_tasks(TaskSort::Auto).unwrap()[0].details, "");
+
+        db.set_task_details(t, "## plan\nwatch the **edge case**").unwrap();
+        assert_eq!(
+            db.list_open_tasks(TaskSort::Auto).unwrap()[0].details,
+            "## plan\nwatch the **edge case**"
+        );
+
+        // the completed-section search also looks inside the notes
+        db.set_task_status(t, TaskStatus::Done).unwrap();
+        assert_eq!(db.list_done_tasks(10, None, "edge case").unwrap().len(), 1);
+        assert!(db.list_done_tasks(10, None, "unrelated").unwrap().is_empty());
     }
 
     #[test]
@@ -305,11 +398,11 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let p1 = db.insert_project("AAA-001", "Alpha", None).unwrap();
         let p2 = db.insert_project("BBB-002", "Beta", None).unwrap();
-        db.insert_log_entry(d("2026-07-04"), p1, "fixed authentication bug", 2.0, true)
+        db.insert_log_entry(d("2026-07-04"), p1, "fixed authentication bug", 2.0, true, None)
             .unwrap();
-        db.insert_log_entry(d("2026-07-04"), p2, "wrote auth docs", 1.5, false)
+        db.insert_log_entry(d("2026-07-04"), p2, "wrote auth docs", 1.5, false, None)
             .unwrap();
-        db.insert_log_entry(d("2026-07-03"), p2, "design review", 3.0, false)
+        db.insert_log_entry(d("2026-07-03"), p2, "design review", 3.0, false, None)
             .unwrap();
 
         // words match description or project code, any order, case-insensitive
@@ -497,11 +590,11 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let p1 = db.insert_project("BBB-002", "Beta", None).unwrap();
         let p2 = db.insert_project("AAA-001", "Alpha", None).unwrap();
-        db.insert_log_entry(d("2026-03-02"), p1, "b later", 1.0, true)
+        db.insert_log_entry(d("2026-03-02"), p1, "b later", 1.0, true, None)
             .unwrap();
-        db.insert_log_entry(d("2026-03-01"), p1, "b earlier", 1.0, true)
+        db.insert_log_entry(d("2026-03-01"), p1, "b earlier", 1.0, true, None)
             .unwrap();
-        db.insert_log_entry(d("2026-03-01"), p2, "a not dev", 1.0, false)
+        db.insert_log_entry(d("2026-03-01"), p2, "a not dev", 1.0, false, None)
             .unwrap();
 
         let rows = db

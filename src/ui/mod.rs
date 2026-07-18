@@ -12,6 +12,7 @@ use crate::app::WorklogApp;
 // where the widget is rendered.
 pub const FOCUS_CAPTURE_DESC: &str = "focus/capture_desc";
 pub const FOCUS_TASK_TITLE: &str = "focus/task_title";
+pub const FOCUS_TASK_EDIT: &str = "focus/task_edit";
 pub const FOCUS_BRIDGE_HOURS: &str = "focus/bridge_hours";
 
 /// True when this widget lost focus because Enter was pressed — the

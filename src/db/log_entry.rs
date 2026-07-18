@@ -12,6 +12,8 @@ pub struct LogEntry {
     pub hours: f64,
     pub is_dev: bool,
     pub created_at: DateTime<Utc>,
+    /// The task this entry was logged from (via the bridge), if any.
+    pub task_id: Option<i64>,
 }
 
 /// A log entry joined with its project's code/name, for lists and reports.
@@ -23,7 +25,7 @@ pub struct LogEntryRow {
 }
 
 const SELECT: &str = "SELECT e.id, e.work_date, e.project_id, e.description, e.hours,
-        e.is_dev, e.created_at, p.code, p.name
+        e.is_dev, e.created_at, p.code, p.name, e.task_id
  FROM log_entries e JOIN projects p ON p.id = e.project_id";
 
 fn row_to_entry(row: &Row) -> rusqlite::Result<LogEntryRow> {
@@ -42,6 +44,7 @@ fn row_to_entry(row: &Row) -> rusqlite::Result<LogEntryRow> {
             created_at: created_at
                 .parse::<DateTime<Utc>>()
                 .unwrap_or_else(|_| Utc::now()),
+            task_id: row.get(9)?,
         },
         project_code: row.get(7)?,
         project_name: row.get(8)?,
@@ -56,10 +59,11 @@ impl Db {
         description: &str,
         hours: f64,
         is_dev: bool,
+        task_id: Option<i64>,
     ) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO log_entries (work_date, project_id, description, hours, is_dev, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO log_entries (work_date, project_id, description, hours, is_dev, created_at, task_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![
                 work_date.to_string(),
                 project_id,
@@ -67,6 +71,7 @@ impl Db {
                 hours,
                 is_dev,
                 Utc::now().to_rfc3339(),
+                task_id,
             ],
         )?;
         Ok(self.conn.last_insert_rowid())

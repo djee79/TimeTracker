@@ -7,7 +7,15 @@ pub fn show(app: &mut WorklogApp, ui_: &mut egui::Ui) {
     ui_.add_space(8.0);
     filter_row(app, ui_);
     ui_.separator();
-    entry_list(app, ui_);
+    if app.show_notes_panel {
+        egui::Panel::right(egui::Id::new("journal/notes_panel"))
+            .resizable(true)
+            .default_size(280.0)
+            .show(ui_, |ui_| ui::tasks::notes_panel(app, ui_));
+    }
+    egui::CentralPanel::default()
+        .frame(egui::Frame::new())
+        .show(ui_, |ui_| entry_list(app, ui_));
 }
 
 /// The fast-capture form. Enter anywhere in it saves.
@@ -79,6 +87,13 @@ fn filter_row(app: &mut WorklogApp, ui_: &mut egui::Ui) {
             app.filter_text.clear();
             app.reload_entries();
         }
+        let mut panel = app.show_notes_panel;
+        ui_.checkbox(&mut panel, "notes panel")
+            .on_hover_text("show the selected task's notes beside the list");
+        if panel != app.show_notes_panel {
+            app.show_notes_panel = panel;
+            let _ = app.db.set_setting("notes_panel", if panel { "1" } else { "0" });
+        }
         let total: f64 = app.entries.iter().map(|e| e.entry.hours).sum();
         ui_.label(
             egui::RichText::new(format!(
@@ -104,6 +119,15 @@ fn entry_list(app: &mut WorklogApp, ui_: &mut egui::Ui) {
         .auto_shrink([false, false])
         .show(ui_, |ui_| {
             let entries = app.entries.clone();
+            // Column widths in characters: code and hours are padded to the
+            // widest in the list (monospace), so descriptions line up no
+            // matter the project, the decimals, or the dev badge.
+            let code_w = entries.iter().map(|r| r.project_code.chars().count()).max().unwrap_or(0);
+            let hours_w = entries
+                .iter()
+                .map(|r| fmt_hours(r.entry.hours).chars().count())
+                .max()
+                .unwrap_or(0);
             let mut last_date = None;
             for (i, row) in entries.iter().enumerate() {
                 // date subheader whenever the day changes
@@ -142,7 +166,7 @@ fn entry_list(app: &mut WorklogApp, ui_: &mut egui::Ui) {
 
                 ui_.horizontal(|ui_| {
                     ui_.label(
-                        egui::RichText::new(&row.project_code)
+                        egui::RichText::new(format!("{:<code_w$}", row.project_code))
                             .strong()
                             .monospace(),
                     )
@@ -153,10 +177,23 @@ fn entry_list(app: &mut WorklogApp, ui_: &mut egui::Ui) {
                             .with_timezone(&chrono::Local)
                             .format("%Y-%m-%d %H:%M")
                     ));
-                    ui_.label(egui::RichText::new(format!("{} h", fmt_hours(row.entry.hours))));
-                    if row.entry.is_dev {
-                        ui::dev_badge(ui_);
-                    }
+                    ui_.label(
+                        egui::RichText::new(format!(
+                            "{:>hours_w$} h",
+                            fmt_hours(row.entry.hours)
+                        ))
+                        .monospace(),
+                    );
+                    // fixed slot whether or not the badge is there
+                    ui_.allocate_ui_with_layout(
+                        egui::vec2(26.0, 16.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui_| {
+                            if row.entry.is_dev {
+                                ui::dev_badge(ui_);
+                            }
+                        },
+                    );
                     ui_.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui_| {
                         if ui::confirm_delete_button(ui_, &mut app.confirm_delete_entry, row.entry.id)
                         {
@@ -168,8 +205,23 @@ fn entry_list(app: &mut WorklogApp, ui_: &mut egui::Ui) {
                         ui_.with_layout(
                             egui::Layout::left_to_right(egui::Align::Center),
                             |ui_| {
-                                ui_.add(egui::Label::new(&row.entry.description).truncate())
-                                    .on_hover_text(&row.entry.description);
+                                let from_task = row.entry.task_id.is_some();
+                                let mut label =
+                                    egui::Label::new(&row.entry.description).truncate();
+                                if from_task {
+                                    label = label.sense(egui::Sense::click());
+                                }
+                                let hover = if from_task {
+                                    format!(
+                                        "{}\n\nclick to show the task's notes",
+                                        row.entry.description
+                                    )
+                                } else {
+                                    row.entry.description.clone()
+                                };
+                                if ui_.add(label).on_hover_text(hover).clicked() {
+                                    app.selected_task_id = row.entry.task_id;
+                                }
                             },
                         );
                     });

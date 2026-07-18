@@ -51,6 +51,11 @@ fn weekly_section(app: &mut WorklogApp, ui_: &mut egui::Ui) {
             let csv = app.weekly_report().to_csv();
             app.export_csv(&format!("timesheet-{}.csv", app.week_start), &csv);
         }
+        if ui_.button("Export PDF…").clicked() {
+            let doc = report::pdf::weekly_pdf(&app.db, app.week_start, app.pdf_include_notes);
+            app.export_pdf(&format!("timesheet-{}.pdf", app.week_start), doc);
+        }
+        notes_option(app, ui_);
         ui_.label(
             egui::RichText::new("click any hours cell to copy that day's text")
                 .weak()
@@ -212,5 +217,26 @@ fn annual_section(app: &mut WorklogApp, ui_: &mut egui::Ui) {
                 Err(e) => app.set_status(format!("Export failed: {e}")),
             }
         }
+        if ui_
+            .add_enabled(count > 0, egui::Button::new("Export PDF…"))
+            .clicked()
+        {
+            let doc = report::pdf::annual_pdf(&app.db, app.report_year, app.pdf_include_notes);
+            app.export_pdf(&format!("dev-export-{}.pdf", app.report_year), doc);
+        }
+        notes_option(app, ui_);
     });
+}
+
+/// The shared PDF option: include each entry's task notes under it.
+fn notes_option(app: &mut WorklogApp, ui_: &mut egui::Ui) {
+    let mut with_notes = app.pdf_include_notes;
+    ui_.checkbox(&mut with_notes, "PDF with task notes")
+        .on_hover_text("include each entry's task notes (rendered markdown) under it in the PDF");
+    if with_notes != app.pdf_include_notes {
+        app.pdf_include_notes = with_notes;
+        let _ = app
+            .db
+            .set_setting("pdf_notes", if with_notes { "1" } else { "0" });
+    }
 }

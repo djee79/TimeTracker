@@ -1,3 +1,5 @@
+pub mod pdf;
+
 use chrono::{Datelike, NaiveDate};
 
 use crate::db::{Db, LogEntryRow};
@@ -294,13 +296,13 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let p1 = db.insert_project("AAA-001", "Alpha", None).unwrap();
         let p2 = db.insert_project("BBB-002", "Beta", None).unwrap();
-        db.insert_log_entry(d("2026-06-29"), p1, "wired the panel", 3.0, false)
+        db.insert_log_entry(d("2026-06-29"), p1, "wired the panel", 3.0, false, None)
             .unwrap();
-        db.insert_log_entry(d("2026-07-01"), p1, "PLC logic, v2", 2.5, true)
+        db.insert_log_entry(d("2026-07-01"), p1, "PLC logic, v2", 2.5, true, None)
             .unwrap();
-        db.insert_log_entry(d("2026-07-02"), p2, "site \"visit\"", 4.0, false)
+        db.insert_log_entry(d("2026-07-02"), p2, "site \"visit\"", 4.0, false, None)
             .unwrap();
-        db.insert_log_entry(d("2026-07-10"), p1, "next week, excluded", 1.0, true)
+        db.insert_log_entry(d("2026-07-10"), p1, "next week, excluded", 1.0, true, None)
             .unwrap();
         db
     }
@@ -376,9 +378,9 @@ mod tests {
     fn week_grid_merges_same_day_entries() {
         let db = Db::open_in_memory().unwrap();
         let p = db.insert_project("AAA-001", "Alpha", None).unwrap();
-        db.insert_log_entry(d("2026-06-29"), p, "morning fix", 1.0, false)
+        db.insert_log_entry(d("2026-06-29"), p, "morning fix", 1.0, false, None)
             .unwrap();
-        db.insert_log_entry(d("2026-06-29"), p, "afternoon docs", 2.0, false)
+        db.insert_log_entry(d("2026-06-29"), p, "afternoon docs", 2.0, false, None)
             .unwrap();
         let grid = WeekGrid::from_report(&weekly(&db, d("2026-06-29")).unwrap());
         assert_eq!(grid.rows[0].days[0].hours, 3.0);

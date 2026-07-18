@@ -1,6 +1,6 @@
 [package]
 name = "worklog"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "A single-binary work journal with tasks, time tracking, and timesheet reports"
 license = "MIT"
@@ -11,8 +11,11 @@ chrono = { version = "0.4.45", features = ["serde"] }
 directories = "6.0.0"
 eframe = "0.35.0"
 egui = "0.35.0"
+egui_commonmark = { version = "0.24.0", default-features = false, features = ["pulldown_cmark"] }
 egui_extras = { version = "0.35.0", features = ["datepicker"] }
+genpdf = "0.2.0"
 jiff = "0.2.31"
+pulldown-cmark = { version = "0.13", default-features = false }
 rfd = "0.17.2"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 serde = { version = "1.0.228", features = ["derive"] }

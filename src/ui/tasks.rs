@@ -9,21 +9,31 @@ pub fn show(app: &mut WorklogApp, ui_: &mut egui::Ui) {
     list_controls(app, ui_);
 
     let mut action: Option<Action> = None;
-    egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
+    if app.show_notes_panel {
+        egui::Panel::right(egui::Id::new("tasks/notes_panel"))
+            .resizable(true)
+            .default_size(280.0)
+            .show(ui_, |ui_| notes_panel(app, ui_));
+    }
+    egui::CentralPanel::default()
+        .frame(egui::Frame::new())
         .show(ui_, |ui_| {
-            if app.open_tasks.is_empty() {
-                ui_.add_space(8.0);
-                ui_.label(egui::RichText::new("No open tasks.").weak());
-            } else if app.group_tasks {
-                grouped_list(app, ui_, &mut action);
-            } else if app.task_sort == TaskSort::Manual {
-                manual_list(app, ui_, &mut action);
-            } else {
-                status_list(app, ui_, &mut action);
-            }
-            ui_.add_space(12.0);
-            done_section(app, ui_, &mut action);
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui_, |ui_| {
+                    if app.open_tasks.is_empty() {
+                        ui_.add_space(8.0);
+                        ui_.label(egui::RichText::new("No open tasks.").weak());
+                    } else if app.group_tasks {
+                        grouped_list(app, ui_, &mut action);
+                    } else if app.task_sort == TaskSort::Manual {
+                        manual_list(app, ui_, &mut action);
+                    } else {
+                        status_list(app, ui_, &mut action);
+                    }
+                    ui_.add_space(12.0);
+                    done_section(app, ui_, &mut action);
+                });
         });
     apply(app, action);
 }
@@ -127,6 +137,368 @@ fn bridge_strip(app: &mut WorklogApp, ui_: &mut egui::Ui) {
     }
 }
 
+/// A formatting action from the notes toolbar.
+enum Md {
+    /// Wrap the selection in a symmetric marker (`**`, `*`, `~~`, `` ` ``).
+    Wrap(&'static str),
+    /// Toggle a prefix on every selected line (`# `, `- `, `> `, `- [ ] `).
+    LinePrefix(&'static str),
+    /// Number the selected lines `1. 2. 3.` (or strip the numbers).
+    Numbered,
+    CodeBlock,
+    Rule,
+    Table,
+}
+
+fn byte_of(s: &str, char_idx: usize) -> usize {
+    s.char_indices().nth(char_idx).map(|(b, _)| b).unwrap_or(s.len())
+}
+
+/// Byte length of a `N. ` list prefix, if the line has one.
+fn numbered_prefix(line: &str) -> Option<usize> {
+    let digits = line.chars().take_while(|c| c.is_ascii_digit()).count();
+    (digits > 0 && line[digits..].starts_with(". ")).then_some(digits + 2)
+}
+
+/// Apply a toolbar action to `text` at the (sorted, char-indexed) selection.
+/// Wrap toggles off when the markers are already there; line prefixes toggle
+/// per block, and a heading replaces whatever heading level was in place.
+/// Returns the new selection, again in chars.
+fn apply_md(text: &mut String, sel: (usize, usize), md: &Md) -> (usize, usize) {
+    let (a, b) = sel;
+    let (ab, bb) = (byte_of(text, a), byte_of(text, b));
+    // The whole lines the selection touches — what line-based actions edit.
+    let line_start = text[..ab].rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let line_end = text[bb..].find('\n').map(|i| bb + i).unwrap_or(text.len());
+    let select_block = |text: &String, new_block: &str| {
+        let s = text[..line_start].chars().count();
+        (s, s + new_block.chars().count())
+    };
+    match md {
+        Md::Wrap(m) => {
+            let ml = m.chars().count();
+            let selected = text[ab..bb].to_string();
+            if selected.len() >= 2 * m.len() && selected.starts_with(m) && selected.ends_with(m) {
+                let inner = selected[m.len()..selected.len() - m.len()].to_string();
+                text.replace_range(ab..bb, &inner);
+                (a, b - 2 * ml)
+            } else if text[..ab].ends_with(m) && text[bb..].starts_with(m) {
+                text.replace_range(bb..bb + m.len(), "");
+                text.replace_range(ab - m.len()..ab, "");
+                (a - ml, b - ml)
+            } else {
+                text.insert_str(bb, m);
+                text.insert_str(ab, m);
+                (a + ml, b + ml)
+            }
+        }
+        Md::LinePrefix(p) => {
+            let lines: Vec<String> =
+                text[line_start..line_end].split('\n').map(String::from).collect();
+            let heading = p.starts_with('#');
+            let all_have = lines.iter().all(|l| l.starts_with(p));
+            let new_block = lines
+                .iter()
+                .map(|l| {
+                    if all_have {
+                        l[p.len()..].to_string()
+                    } else if heading {
+                        let bare = l.trim_start_matches('#');
+                        let bare = bare.strip_prefix(' ').unwrap_or(bare);
+                        format!("{p}{bare}")
+                    } else {
+                        format!("{p}{l}")
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            text.replace_range(line_start..line_end, &new_block);
+            select_block(text, &new_block)
+        }
+        Md::Numbered => {
+            let lines: Vec<String> =
+                text[line_start..line_end].split('\n').map(String::from).collect();
+            let all_have = lines.iter().all(|l| numbered_prefix(l).is_some());
+            let new_block = lines
+                .iter()
+                .enumerate()
+                .map(|(i, l)| {
+                    if all_have {
+                        l[numbered_prefix(l).unwrap()..].to_string()
+                    } else {
+                        format!("{}. {l}", i + 1)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            text.replace_range(line_start..line_end, &new_block);
+            select_block(text, &new_block)
+        }
+        Md::CodeBlock => {
+            let new_block = format!("```\n{}\n```", &text[line_start..line_end]);
+            text.replace_range(line_start..line_end, &new_block);
+            select_block(text, &new_block)
+        }
+        Md::Rule => {
+            text.insert_str(line_end, "\n\n---\n");
+            let p = text[..line_end].chars().count() + 6;
+            (p, p)
+        }
+        Md::Table => {
+            let t = "\n\n| Col 1 | Col 2 |\n| --- | --- |\n|  |  |\n";
+            text.insert_str(line_end, t);
+            let p = text[..line_end].chars().count() + t.chars().count();
+            (p, p)
+        }
+    }
+}
+
+/// The formatting toolbar shown above the notes editor.
+fn md_toolbar(ui_: &mut egui::Ui, md: &mut Option<Md>) {
+    fn tb(ui_: &mut egui::Ui, label: impl Into<egui::WidgetText>, hint: &str) -> bool {
+        ui_.button(label).on_hover_text(hint).clicked()
+    }
+    use egui::RichText as R;
+    ui_.horizontal_wrapped(|ui_| {
+        if tb(ui_, R::new("B").strong(), "bold — **text** (Ctrl+B)") {
+            *md = Some(Md::Wrap("**"));
+        }
+        if tb(ui_, R::new("I").italics(), "italic — *text* (Ctrl+I)") {
+            *md = Some(Md::Wrap("*"));
+        }
+        if tb(ui_, R::new("S").strikethrough(), "strikethrough — ~~text~~") {
+            *md = Some(Md::Wrap("~~"));
+        }
+        if tb(ui_, R::new("c").monospace(), "inline code — `text`") {
+            *md = Some(Md::Wrap("`"));
+        }
+        ui_.separator();
+        ui_.menu_button("H", |ui_| {
+            for (label, p) in [("Heading 1", "# "), ("Heading 2", "## "), ("Heading 3", "### ")] {
+                if ui_.button(label).clicked() {
+                    *md = Some(Md::LinePrefix(p));
+                    ui_.close();
+                }
+            }
+        })
+        .response
+        .on_hover_text("heading");
+        if tb(ui_, "•", "bullet list") {
+            *md = Some(Md::LinePrefix("- "));
+        }
+        if tb(ui_, "1.", "numbered list") {
+            *md = Some(Md::Numbered);
+        }
+        if tb(ui_, "☑", "task list — - [ ]") {
+            *md = Some(Md::LinePrefix("- [ ] "));
+        }
+        ui_.separator();
+        if tb(ui_, "❝", "quote") {
+            *md = Some(Md::LinePrefix("> "));
+        }
+        if tb(ui_, R::new("</>").monospace(), "code block") {
+            *md = Some(Md::CodeBlock);
+        }
+        if tb(ui_, "⊞", "table") {
+            *md = Some(Md::Table);
+        }
+        if tb(ui_, "—", "horizontal rule") {
+            *md = Some(Md::Rule);
+        }
+    });
+}
+
+/// The notes window: one task's markdown details, with an Edit/Preview
+/// toggle. Closing the window (or the Save button) saves — notes are too
+/// long to lose to a misclick, so there is no discard path.
+pub fn details_window(app: &mut WorklogApp, ctx: &egui::Context) {
+    let Some(mut d) = app.task_details.take() else {
+        return;
+    };
+    let mut open = true;
+    let mut save = false;
+    egui::Window::new(format!("Notes — {}", d.task_title))
+        .id(egui::Id::new("task_details"))
+        .open(&mut open)
+        .resizable(true)
+        .default_width(540.0)
+        .default_height(420.0)
+        .show(ctx, |ui_| {
+            ui_.horizontal(|ui_| {
+                ui_.selectable_value(&mut d.preview, false, "Edit");
+                ui_.selectable_value(&mut d.preview, true, "Preview");
+                if ui_.button("Save").clicked() {
+                    save = true;
+                }
+                if d.text != d.saved {
+                    ui_.label(egui::RichText::new("unsaved").weak().small());
+                }
+                ui_.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui_| {
+                    ui_.label(
+                        egui::RichText::new("markdown: **bold**  # heading  - list  `code`")
+                            .weak()
+                            .small(),
+                    );
+                });
+            });
+            let editor_id = egui::Id::new("task_details_editor");
+            if !d.preview {
+                let mut md: Option<Md> = None;
+                md_toolbar(ui_, &mut md);
+                if ui_.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::B)) {
+                    md = Some(Md::Wrap("**"));
+                }
+                if ui_.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::I)) {
+                    md = Some(Md::Wrap("*"));
+                }
+                if let Some(md) = md {
+                    // Last frame's cursor tells us what to format; fall back
+                    // to the end of the text if the editor was never focused.
+                    let ctx_ = ui_.ctx().clone();
+                    let sel = egui::TextEdit::load_state(&ctx_, editor_id)
+                        .and_then(|s| s.cursor.char_range())
+                        .map(|r| {
+                            let (x, y) = (r.primary.index.0, r.secondary.index.0);
+                            (x.min(y), x.max(y))
+                        })
+                        .unwrap_or_else(|| {
+                            let n = d.text.chars().count();
+                            (n, n)
+                        });
+                    let (na, nb) = apply_md(&mut d.text, sel, &md);
+                    let mut state =
+                        egui::TextEdit::load_state(&ctx_, editor_id).unwrap_or_default();
+                    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                        egui::text::CCursor::new(na),
+                        egui::text::CCursor::new(nb),
+                    )));
+                    state.store(&ctx_, editor_id);
+                    ctx_.memory_mut(|m| m.request_focus(editor_id));
+                }
+            }
+            ui_.separator();
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui_, |ui_| {
+                    if d.preview {
+                        if d.text.trim().is_empty() {
+                            ui_.label(
+                                egui::RichText::new("Nothing here yet — switch to Edit.").weak(),
+                            );
+                        } else {
+                            egui_commonmark::CommonMarkViewer::new().show(
+                                ui_,
+                                &mut app.md_cache,
+                                &d.text,
+                            );
+                        }
+                    } else {
+                        ui_.add(
+                            egui::TextEdit::multiline(&mut d.text)
+                                .id(editor_id)
+                                .hint_text("Anything worth remembering about this task…")
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(16),
+                        );
+                    }
+                });
+        });
+    if (save || !open) && d.text != d.saved {
+        match app.db.set_task_details(d.task_id, d.text.trim()) {
+            Ok(()) => {
+                d.saved = d.text.clone();
+                app.set_status(format!("Notes saved — {}", d.task_title));
+            }
+            Err(e) => app.set_status(format!("Save failed: {e}")),
+        }
+        app.touch();
+    }
+    if open {
+        app.task_details = Some(d);
+    }
+}
+
+/// The 📄 row button; weak while the task has no notes yet. Hovering it
+/// shows the rendered notes (truncated when very long) for a quick glance.
+fn details_button(app: &mut WorklogApp, ui_: &mut egui::Ui, task: &Task) {
+    let has_notes = !task.details.trim().is_empty();
+    let icon = if has_notes {
+        egui::RichText::new("📄")
+    } else {
+        egui::RichText::new("📄").weak()
+    };
+    let resp = ui_.button(icon);
+    let resp = if has_notes {
+        resp.on_hover_ui(|ui_| {
+            ui_.set_max_width(420.0);
+            match task.details.char_indices().nth(1200) {
+                Some((cut, _)) => {
+                    egui_commonmark::CommonMarkViewer::new().show(
+                        ui_,
+                        &mut app.md_cache,
+                        &task.details[..cut],
+                    );
+                    ui_.label(egui::RichText::new("… click 📄 for the rest").weak().small());
+                }
+                None => {
+                    egui_commonmark::CommonMarkViewer::new().show(
+                        ui_,
+                        &mut app.md_cache,
+                        &task.details,
+                    );
+                }
+            }
+        })
+    } else {
+        resp.on_hover_text("add notes")
+    };
+    if resp.clicked() {
+        app.open_task_details(task);
+    }
+}
+
+/// Right-hand glance panel: rendered notes for the selected (or active)
+/// task. Shown on the Tasks and Journal screens (same toggle).
+pub fn notes_panel(app: &mut WorklogApp, ui_: &mut egui::Ui) {
+    // DB lookup, not the open list: completed tasks (clicked in the
+    // Completed section or via a journal entry) resolve too.
+    let task = app
+        .selected_task_id
+        .and_then(|id| app.db.task(id).ok().flatten())
+        .or_else(|| app.active_task().cloned());
+    let Some(task) = task else {
+        ui_.add_space(8.0);
+        ui_.label(
+            egui::RichText::new(
+                "Click a task (or a journal entry logged from one) to show its notes here.",
+            )
+            .weak(),
+        );
+        return;
+    };
+    ui_.horizontal(|ui_| {
+        ui_.label(egui::RichText::new(&task.title).strong());
+        if task.status == TaskStatus::Done {
+            ui_.label(egui::RichText::new("(completed)").weak().small());
+        }
+        ui_.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui_| {
+            if ui_.button("✏").on_hover_text("edit notes").clicked() {
+                app.open_task_details(&task);
+            }
+        });
+    });
+    ui_.separator();
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui_, |ui_| {
+            if task.details.trim().is_empty() {
+                ui_.label(egui::RichText::new("No notes yet — ✏ to add some.").weak());
+            } else {
+                egui_commonmark::CommonMarkViewer::new().show(ui_, &mut app.md_cache, &task.details);
+            }
+        });
+}
+
 /// Cycle button for a priority value. Returns Some(new) when clicked.
 fn priority_button(ui_: &mut egui::Ui, priority: Priority) -> Option<Priority> {
     let (symbol, color) = match priority {
@@ -202,6 +574,14 @@ fn list_controls(app: &mut WorklogApp, ui_: &mut egui::Ui) {
             let _ = app.db.set_setting("group_tasks", if group { "1" } else { "0" });
         }
 
+        let mut panel = app.show_notes_panel;
+        ui_.checkbox(&mut panel, "notes panel")
+            .on_hover_text("show the selected task's notes beside the list");
+        if panel != app.show_notes_panel {
+            app.show_notes_panel = panel;
+            let _ = app.db.set_setting("notes_panel", if panel { "1" } else { "0" });
+        }
+
         let hint = match app.task_sort {
             TaskSort::Auto => "sorts itself: active, in progress, priority, newest",
             TaskSort::Manual => "drag ☰ to reorder; new tasks land on top",
@@ -215,6 +595,7 @@ enum Action {
     LogSoFar(Task),
     SetStatus(i64, TaskStatus),
     SetPriority(i64, Priority),
+    Rename(i64, String),
     Activate(i64),
     Delete(i64),
     /// Move task .0 above (.2 = true) or below task .1 in the manual order.
@@ -233,9 +614,15 @@ fn task_row(
     action: &mut Option<Action>,
 ) {
     let is_active = app.active_task_id == Some(task.id);
+    let is_selected = app.show_notes_panel && app.selected_task_id == Some(task.id);
     let frame = if is_active {
         egui::Frame::new()
             .fill(ui_.visuals().selection.bg_fill.linear_multiply(0.22))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(6, 3))
+    } else if is_selected {
+        egui::Frame::new()
+            .fill(ui_.visuals().selection.bg_fill.linear_multiply(0.10))
             .corner_radius(4.0)
             .inner_margin(egui::Margin::symmetric(6, 3))
     } else {
@@ -244,6 +631,30 @@ fn task_row(
     let row = frame.show(ui_, |ui_| {
         ui_.set_width(ui_.available_width());
         ui_.horizontal(|ui_| {
+            // Renaming: the row becomes a text field. Enter saves, Esc cancels.
+            if app.editing_task.as_ref().is_some_and(|(id, _)| *id == task.id) {
+                let (_, mut title) = app.editing_task.take().unwrap();
+                let resp = ui_.add(
+                    egui::TextEdit::singleline(&mut title)
+                        .desired_width(ui_.available_width() - 64.0),
+                );
+                app.apply_focus(ui::FOCUS_TASK_EDIT, &resp);
+                let submit = ui::enter_pressed(&resp, ui_);
+                let valid = !title.trim().is_empty();
+                let save = ui_
+                    .add_enabled(valid, egui::Button::new("✔"))
+                    .on_hover_text("save (Enter)")
+                    .clicked()
+                    || (submit && valid);
+                let cancel = ui_.button("✖").on_hover_text("cancel (Esc)").clicked()
+                    || (resp.lost_focus() && ui_.input(|i| i.key_pressed(egui::Key::Escape)));
+                if save {
+                    *action = Some(Action::Rename(task.id, title.trim().to_string()));
+                } else if !cancel {
+                    app.editing_task = Some((task.id, title));
+                }
+                return;
+            }
             if draggable {
                 ui_.dnd_drag_source(egui::Id::new(("task_drag", task.id)), task.id, |ui_| {
                     ui_.label(egui::RichText::new("☰").weak())
@@ -286,11 +697,23 @@ fn task_row(
                     crate::report::fmt_duration(tracked)
                 ));
             }
-            ui_.label(title).on_hover_text(hover);
+            hover.push_str("\ndouble-click to edit");
+            let title_resp = ui_
+                .add(egui::Label::new(title).sense(egui::Sense::click()))
+                .on_hover_text(hover);
+            if title_resp.double_clicked() {
+                app.start_task_edit(task);
+            } else if title_resp.clicked() {
+                app.selected_task_id = Some(task.id);
+            }
             ui_.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui_| {
                 if ui::confirm_delete_button(ui_, &mut app.confirm_delete_task, task.id) {
                     *action = Some(Action::Delete(task.id));
                 }
+                if ui_.button("✏").on_hover_text("edit title").clicked() {
+                    app.start_task_edit(task);
+                }
+                details_button(app, ui_, task);
                 match task.status {
                     TaskStatus::Todo => {
                         if ui_
@@ -458,13 +881,25 @@ fn done_section(app: &mut WorklogApp, ui_: &mut egui::Ui, action: &mut Option<Ac
                         .unwrap_or_default();
                     ui_.label(egui::RichText::new(when).weak().small().monospace());
                     ui_.label(egui::RichText::new(&task.project_code).monospace().weak());
-                    ui_.label(egui::RichText::new(&task.title).weak());
+                    let title_resp = ui_.add(
+                        egui::Label::new(egui::RichText::new(&task.title).weak())
+                            .sense(egui::Sense::click()),
+                    );
+                    if title_resp
+                        .on_hover_text("click to show notes in the side panel")
+                        .clicked()
+                    {
+                        app.selected_task_id = Some(task.id);
+                    }
                     ui_.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui_| {
                         if ui::confirm_delete_button(ui_, &mut app.confirm_delete_task, task.id) {
                             *action = Some(Action::Delete(task.id));
                         }
                         if ui_.button("↺").on_hover_text("reopen").clicked() {
                             *action = Some(Action::SetStatus(task.id, TaskStatus::Todo));
+                        }
+                        if !task.details.trim().is_empty() {
+                            details_button(app, ui_, task);
                         }
                     });
                 });
@@ -476,6 +911,70 @@ fn done_section(app: &mut WorklogApp, ui_: &mut egui::Ui, action: &mut Option<Ac
                 ui_.label(egui::RichText::new(msg).weak());
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wrap_adds_and_toggles() {
+        let mut t = String::from("hello world");
+        assert_eq!(apply_md(&mut t, (6, 11), &Md::Wrap("**")), (8, 13));
+        assert_eq!(t, "hello **world**");
+        // same selection (the inner word) toggles it back off
+        assert_eq!(apply_md(&mut t, (8, 13), &Md::Wrap("**")), (6, 11));
+        assert_eq!(t, "hello world");
+        // selecting the markers too also toggles off
+        apply_md(&mut t, (6, 11), &Md::Wrap("~~"));
+        assert_eq!(apply_md(&mut t, (6, 15), &Md::Wrap("~~")), (6, 11));
+        assert_eq!(t, "hello world");
+    }
+
+    #[test]
+    fn empty_selection_wrap_places_cursor_between_markers() {
+        let mut t = String::from("ab");
+        assert_eq!(apply_md(&mut t, (2, 2), &Md::Wrap("**")), (4, 4));
+        assert_eq!(t, "ab****");
+    }
+
+    #[test]
+    fn heading_swaps_level_and_toggles() {
+        let mut t = String::from("title");
+        apply_md(&mut t, (0, 0), &Md::LinePrefix("# "));
+        assert_eq!(t, "# title");
+        apply_md(&mut t, (3, 3), &Md::LinePrefix("## "));
+        assert_eq!(t, "## title");
+        apply_md(&mut t, (0, 0), &Md::LinePrefix("## "));
+        assert_eq!(t, "title");
+    }
+
+    #[test]
+    fn lists_cover_every_selected_line() {
+        let mut t = String::from("a\nb\nc");
+        apply_md(&mut t, (0, 5), &Md::LinePrefix("- "));
+        assert_eq!(t, "- a\n- b\n- c");
+        let mut t = String::from("a\nb");
+        apply_md(&mut t, (0, 3), &Md::Numbered);
+        assert_eq!(t, "1. a\n2. b");
+        let len = t.chars().count();
+        apply_md(&mut t, (0, len), &Md::Numbered);
+        assert_eq!(t, "a\nb");
+    }
+
+    #[test]
+    fn code_block_wraps_selected_lines() {
+        let mut t = String::from("let x = 1;");
+        apply_md(&mut t, (2, 5), &Md::CodeBlock);
+        assert_eq!(t, "```\nlet x = 1;\n```");
+    }
+
+    #[test]
+    fn wrap_survives_multibyte_text() {
+        let mut t = String::from("café été");
+        assert_eq!(apply_md(&mut t, (5, 8), &Md::Wrap("**")), (7, 10));
+        assert_eq!(t, "café **été**");
+    }
 }
 
 fn apply(app: &mut WorklogApp, action: Option<Action>) {
@@ -498,6 +997,13 @@ fn apply(app: &mut WorklogApp, action: Option<Action>) {
         Some(Action::SetPriority(id, priority)) => {
             if let Err(e) = app.db.set_task_priority(id, priority) {
                 app.set_status(format!("Update failed: {e}"));
+            }
+            app.touch();
+        }
+        Some(Action::Rename(id, title)) => {
+            match app.db.set_task_title(id, &title) {
+                Ok(()) => app.set_status("Task updated"),
+                Err(e) => app.set_status(format!("Update failed: {e}")),
             }
             app.touch();
         }
