@@ -15,15 +15,23 @@ pub enum IdleMonitor {
     Wayland(wayland::WaylandIdle),
     /// Read `user-idle` on every call.
     Poll,
+    /// No display at all (headless/CI). Never calls `user-idle`: its X11
+    /// backend dereferences a NULL display and segfaults without an X server.
+    Disabled,
 }
 
 impl IdleMonitor {
     pub fn new() -> IdleMonitor {
         #[cfg(target_os = "linux")]
-        if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty())
-            && let Some(w) = wayland::WaylandIdle::start()
         {
-            return IdleMonitor::Wayland(w);
+            if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty())
+                && let Some(w) = wayland::WaylandIdle::start()
+            {
+                return IdleMonitor::Wayland(w);
+            }
+            if std::env::var_os("DISPLAY").is_none_or(|v| v.is_empty()) {
+                return IdleMonitor::Disabled;
+            }
         }
         IdleMonitor::Poll
     }
@@ -37,6 +45,7 @@ impl IdleMonitor {
             IdleMonitor::Poll => user_idle::UserIdle::get_time()
                 .ok()
                 .map(|t| t.as_seconds()),
+            IdleMonitor::Disabled => None,
         }
     }
 }

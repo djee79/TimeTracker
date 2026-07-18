@@ -9,6 +9,7 @@ fn main() {
         #[cfg(target_os = "linux")]
         idle::IdleMonitor::Wayland(_) => "wayland ext-idle-notify",
         idle::IdleMonitor::Poll => "user-idle poll",
+        idle::IdleMonitor::Disabled => "disabled (no display)",
     };
     println!("backend: {backend}");
     for _ in 0..3 {
