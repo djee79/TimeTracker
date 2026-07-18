@@ -1,6 +1,6 @@
 [package]
 name = "worklog"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "A single-binary work journal with tasks, time tracking, and timesheet reports"
 license = "MIT"
@@ -14,12 +14,25 @@ egui = "0.35.0"
 egui_commonmark = { version = "0.24.0", default-features = false, features = ["pulldown_cmark"] }
 egui_extras = { version = "0.35.0", features = ["datepicker"] }
 genpdf = "0.2.0"
+# png decode only — for the embedded window icon
+image = { version = "0.25", default-features = false, features = ["png"] }
 jiff = "0.2.31"
 pulldown-cmark = { version = "0.13", default-features = false }
 rfd = "0.17.2"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
+# covers Windows and X11 sessions; Wayland has a native listener (src/idle.rs)
+user-idle = "0.6.0"
+
+[build-dependencies]
+# embeds the .ico into the Windows exe (file icon in Explorer/taskbar)
+winresource = "0.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# pure-Rust Wayland client for the ext-idle-notify-v1 listener
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 
 [profile.release]
 lto = true

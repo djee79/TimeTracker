@@ -2,7 +2,9 @@ use std::time::Instant;
 
 use chrono::{Datelike, NaiveDate};
 
-use crate::db::{Db, LogEntryRow, Priority, Project, ProjectStatus, Task, TaskSort, TaskStatus};
+use crate::db::{
+    Db, LogEntry, LogEntryRow, Priority, Project, ProjectStatus, Task, TaskSort, TaskStatus,
+};
 use crate::report::{self, WeeklyReport};
 use crate::ui;
 
@@ -146,6 +148,18 @@ pub struct TaskDetails {
     pub preview: bool,
 }
 
+/// A just-deleted record, kept so the status bar can offer Undo for a bit.
+pub enum UndoItem {
+    Entry(LogEntry),
+    Task(Task),
+}
+
+/// How long the status-bar Undo stays available after a deletion.
+pub const UNDO_WINDOW_SECS: u64 = 10;
+
+/// No input for this long pauses running task timers (when enabled).
+pub const IDLE_PAUSE_SECS: u64 = 10 * 60;
+
 /// Add/edit form state for the Projects window.
 #[derive(Default)]
 pub struct ProjectForm {
@@ -203,9 +217,35 @@ pub struct WorklogApp {
     // Reports
     pub week_start: NaiveDate,
     weekly_cache: Option<(NaiveDate, u64, WeeklyReport)>,
+    pub month_start: NaiveDate,
     pub report_year: i32,
     /// PDF exports include the linked task's notes under each entry. Persisted.
     pub pdf_include_notes: bool,
+
+    // Global search (Ctrl+F)
+    pub show_search: bool,
+    pub search_query: String,
+
+    // Undo for deletions
+    pub undo_delete: Option<(UndoItem, Instant)>,
+
+    // Settings (Projects window → App settings; persisted)
+    pub settings_mirror_dir: String,
+    pub settings_author: String,
+    pub idle_pause: bool,
+    pub show_splash: bool,
+
+    /// Splash artwork, loaded lazily for the Help window's about-footer.
+    pub splash: Option<crate::ui::Splash>,
+
+    // Idle detection state
+    idle: crate::idle::IdleMonitor,
+    idle_paused: bool,
+    /// Set false after the first failed idle-time read (platform can't
+    /// report it) — stops the polling, and any warning spam, for good.
+    idle_available: bool,
+    last_idle_poll: Option<Instant>,
+    last_app_activity: Instant,
 
     // Projects window
     pub show_projects: bool,
@@ -225,9 +265,75 @@ pub struct WorklogApp {
     focus_id: Option<egui::Id>,
 }
 
+/// What the boot thread found while the splash was up — surfaced in the
+/// status bar once the app proper starts.
+#[derive(Default)]
+pub struct BootReport {
+    pub status: Option<String>,
+    pub db_warning: Option<String>,
+    /// The "show splash at startup" setting — read here because the splash
+    /// is deciding how long to stay before the app exists.
+    pub show_splash: bool,
+}
+
+/// Copy today's snapshot into the mirror folder, if one is configured and it
+/// isn't there yet (second disk / NAS — survives the primary dying).
+fn mirror_backup(db: &Db, snapshot: &std::path::Path) -> Result<(), String> {
+    let dir = db.setting("backup_mirror_dir").unwrap_or_default();
+    let dir = dir.trim();
+    if dir.is_empty() {
+        return Ok(());
+    }
+    let Some(name) = snapshot.file_name() else {
+        return Ok(());
+    };
+    let target = std::path::Path::new(dir).join(name);
+    if target.exists() {
+        return Ok(());
+    }
+    std::fs::copy(snapshot, &target)
+        .map(|_| ())
+        .map_err(|e| format!("Backup mirror failed ({dir}): {e}"))
+}
+
 impl WorklogApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Result<WorklogApp, String> {
+    /// The slow part of startup — database open/migrate, daily backup (+
+    /// mirror), integrity check, monthly vacuum. Runs on a background thread
+    /// behind the splash screen.
+    pub fn boot_db() -> Result<(Db, BootReport), String> {
         let db = Db::open_default()?;
+        let mut report = BootReport {
+            show_splash: db.setting("show_splash").as_deref() != Some("0"),
+            ..BootReport::default()
+        };
+        match db.backup_daily(10) {
+            Ok(Some((path, created))) => {
+                if created {
+                    report.status = Some(format!("Backed up to {}", path.display()));
+                }
+                if let Err(e) = mirror_backup(&db, &path) {
+                    report.status = Some(e);
+                }
+            }
+            Ok(None) => {}
+            Err(e) => report.status = Some(format!("Backup failed: {e}")),
+        }
+        match db.integrity_check() {
+            Ok(None) => {
+                let _ = db.vacuum_monthly();
+            }
+            Ok(Some(found)) => {
+                report.db_warning = Some(format!(
+                    "⚠ database check failed: {found} — restore a backup soon"
+                ));
+            }
+            Err(e) => report.db_warning = Some(format!("⚠ database check failed: {e}")),
+        }
+        Ok((db, report))
+    }
+
+    /// The fast part: build the app from an already-booted database.
+    pub fn from_db(db: Db, boot: BootReport) -> WorklogApp {
         let today = today();
         let mut app = WorklogApp {
             db,
@@ -259,8 +365,22 @@ impl WorklogApp {
             task_sort: TaskSort::Auto,
             week_start: report::week_start_of(today),
             weekly_cache: None,
+            month_start: report::month_start_of(today),
             report_year: today.year(),
             pdf_include_notes: true,
+            show_search: false,
+            search_query: String::new(),
+            undo_delete: None,
+            settings_mirror_dir: String::new(),
+            settings_author: String::new(),
+            idle_pause: true,
+            show_splash: boot.show_splash,
+            splash: None,
+            idle: crate::idle::IdleMonitor::new(),
+            idle_paused: false,
+            idle_available: true,
+            last_idle_poll: None,
+            last_app_activity: Instant::now(),
             show_projects: false,
             project_form: ProjectForm::default(),
             show_help: false,
@@ -270,30 +390,19 @@ impl WorklogApp {
             status: None,
             focus_id: None,
         };
-        // Daily safety net: a consistent snapshot next to the live file.
-        match app.db.backup_daily(10) {
-            Ok(Some(path)) => app.set_status(format!("Backed up to {}", path.display())),
-            Ok(None) => {}
-            Err(e) => app.set_status(format!("Backup failed: {e}")),
+        // Boot-thread findings (backup, mirror, integrity) → status bar.
+        if let Some(status) = boot.status {
+            app.set_status(status);
         }
-        // Maintenance: corruption is caught while the backups still hold good
-        // data; the monthly vacuum keeps the file compact after deletions.
-        match app.db.integrity_check() {
-            Ok(None) => {
-                let _ = app.db.vacuum_monthly();
-            }
-            Ok(Some(report)) => {
-                app.db_warning = Some(format!(
-                    "⚠ database check failed: {report} — restore a backup soon"
-                ));
-            }
-            Err(e) => app.db_warning = Some(format!("⚠ database check failed: {e}")),
-        }
+        app.db_warning = boot.db_warning;
         app.reload_projects();
         app.reload_entries();
         app.group_tasks = app.db.setting("group_tasks").as_deref() == Some("1");
         app.show_notes_panel = app.db.setting("notes_panel").as_deref() == Some("1");
         app.pdf_include_notes = app.db.setting("pdf_notes").as_deref() != Some("0");
+        app.settings_mirror_dir = app.db.setting("backup_mirror_dir").unwrap_or_default();
+        app.settings_author = app.db.setting("report_author").unwrap_or_default();
+        app.idle_pause = app.db.setting("idle_pause").as_deref() != Some("0");
         if app.db.setting("task_sort").as_deref() == Some("manual") {
             app.task_sort = TaskSort::Manual;
         }
@@ -330,7 +439,7 @@ impl WorklogApp {
         if app.projects.is_empty() {
             app.show_projects = true;
         }
-        Ok(app)
+        app
     }
 
     // ---- data loading ----
@@ -449,6 +558,71 @@ impl WorklogApp {
     pub fn active_task(&self) -> Option<&Task> {
         let id = self.active_task_id?;
         self.open_tasks.iter().find(|t| t.id == id)
+    }
+
+    /// Remember a just-deleted record so the status bar can offer Undo.
+    pub fn offer_undo(&mut self, item: UndoItem) {
+        self.undo_delete = Some((item, Instant::now()));
+    }
+
+    /// Put the last deletion back (original timestamps, fresh id).
+    pub fn undo_delete_now(&mut self) {
+        let Some((item, _)) = self.undo_delete.take() else {
+            return;
+        };
+        let result = match &item {
+            UndoItem::Entry(e) => self.db.reinsert_log_entry(e).map(|_| "Entry restored"),
+            UndoItem::Task(t) => self
+                .db
+                .reinsert_task(t, chrono::Utc::now())
+                .map(|_| "Task restored"),
+        };
+        match result {
+            Ok(msg) => self.set_status(msg),
+            Err(e) => self.set_status(format!("Undo failed: {e}")),
+        }
+        self.touch();
+    }
+
+    /// Pause running task timers when the machine goes idle; resume on
+    /// activity. Best effort: where idle time can't be read (e.g. some
+    /// Wayland setups) this quietly does nothing, and the app's own input
+    /// always counts as activity.
+    fn poll_idle(&mut self) {
+        if !self.idle_pause || !self.idle_available {
+            return;
+        }
+        if self
+            .last_idle_poll
+            .is_some_and(|t| t.elapsed().as_secs() < 5)
+        {
+            return;
+        }
+        self.last_idle_poll = Some(Instant::now());
+        let Some(idle_secs) = self.idle.idle_secs() else {
+            // this platform can't tell us — give up for the session rather
+            // than fail (and possibly log a warning) every 5 seconds
+            self.idle_available = false;
+            if self.idle_paused {
+                let _ = self.db.restart_doing_timers(chrono::Utc::now());
+                self.idle_paused = false;
+            }
+            return;
+        };
+        let idle_secs = idle_secs.min(self.last_app_activity.elapsed().as_secs());
+        if !self.idle_paused && idle_secs >= IDLE_PAUSE_SECS {
+            // bank only up to the moment activity stopped
+            let stop_at = chrono::Utc::now() - chrono::Duration::seconds(idle_secs as i64);
+            let _ = self.db.stop_all_task_timers(stop_at);
+            self.idle_paused = true;
+            self.set_status("Task timers paused — machine idle");
+            self.touch();
+        } else if self.idle_paused && idle_secs < IDLE_PAUSE_SECS {
+            let _ = self.db.restart_doing_timers(chrono::Utc::now());
+            self.idle_paused = false;
+            self.set_status("Task timers resumed");
+            self.touch();
+        }
     }
 
     /// Call after any mutation: bumps the version (invalidating report caches)
@@ -671,9 +845,11 @@ impl eframe::App for WorklogApp {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
         // Keyboard shortcuts: Ctrl+1/2/3 switch tabs, Ctrl+N quick-capture,
-        // Ctrl+T new task.
+        // Ctrl+T new task, Ctrl+F search.
+        let mut had_input = false;
         ctx.input_mut(|i| {
             use egui::{Key, Modifiers};
+            had_input = !i.events.is_empty() || i.pointer.is_moving();
             if i.consume_key(Modifiers::CTRL, Key::Num1) {
                 self.tab = Tab::Journal;
             }
@@ -691,7 +867,17 @@ impl eframe::App for WorklogApp {
                 self.tab = Tab::Tasks;
                 self.focus_id = Some(egui::Id::new(ui::FOCUS_TASK_TITLE));
             }
+            if i.consume_key(Modifiers::CTRL, Key::F) {
+                self.show_search = true;
+                self.focus_id = Some(egui::Id::new(ui::FOCUS_SEARCH));
+            }
         });
+        if had_input {
+            self.last_app_activity = Instant::now();
+        }
+        self.poll_idle();
+        // Guaranteed wake-ups so the idle poll runs even with no interaction.
+        ctx.request_repaint_after(std::time::Duration::from_secs(15));
 
         egui::Panel::top(egui::Id::new("tabs")).show(root, |ui_| {
             ui_.add_space(4.0);
@@ -702,6 +888,14 @@ impl eframe::App for WorklogApp {
                 ui_.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui_| {
                     if ui_.button("?").on_hover_text("help").clicked() {
                         self.show_help = true;
+                    }
+                    if ui_
+                        .button("🔍")
+                        .on_hover_text("search everything (Ctrl+F)")
+                        .clicked()
+                    {
+                        self.show_search = true;
+                        self.request_focus(ui::FOCUS_SEARCH);
                     }
                     if ui_.button("Projects…").clicked() {
                         self.show_projects = true;
@@ -741,6 +935,16 @@ impl eframe::App for WorklogApp {
                             .strong(),
                     );
                 }
+                match &self.undo_delete {
+                    Some((_, at)) if at.elapsed().as_secs() < UNDO_WINDOW_SECS => {
+                        if ui_.button("↩ Undo delete").clicked() {
+                            self.undo_delete_now();
+                        }
+                        ctx.request_repaint_after(std::time::Duration::from_millis(500));
+                    }
+                    Some(_) => self.undo_delete = None,
+                    None => {}
+                }
                 if let Some((text, at)) = &self.status {
                     if at.elapsed().as_secs_f32() < 5.0 {
                         ui_.label(egui::RichText::new(text).strong());
@@ -776,6 +980,7 @@ impl eframe::App for WorklogApp {
 
         ui::projects::show_window(self, &ctx);
         ui::tasks::details_window(self, &ctx);
+        ui::search::show_window(self, &ctx);
         ui::help::show_window(self, &ctx);
     }
 }

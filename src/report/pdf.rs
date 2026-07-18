@@ -36,17 +36,42 @@ fn document(title: &str) -> Result<Document, String> {
     doc.set_line_spacing(1.15);
     let mut decorator = genpdf::SimplePageDecorator::new();
     decorator.set_margins(Margins::trbl(15, 15, 18, 15));
+    // page number, top right, from page 2 on
+    decorator.set_header(|page| {
+        let mut p = elements::Paragraph::default();
+        if page > 1 {
+            p.push_styled(
+                format!("page {page}"),
+                Style::new().with_color(GRAY).with_font_size(8),
+            );
+            p.set_alignment(genpdf::Alignment::Right);
+        }
+        p.padded(Margins::trbl(0.0, 0.0, 3.0, 0.0))
+    });
     doc.set_page_decorator(decorator);
     Ok(doc)
 }
 
-/// Title block shared by both reports.
-fn push_header(doc: &mut Document, title: &str, subtitle: &str) {
+/// "Prepared by … — generated …" line under the subtitle; the name comes
+/// from the `report_author` setting (Projects window → App settings).
+fn byline(db: &Db) -> String {
+    let today = chrono::Local::now().date_naive();
+    match db.setting("report_author").filter(|a| !a.trim().is_empty()) {
+        Some(author) => format!("Prepared by {} — generated {today}", author.trim()),
+        None => format!("Generated {today}"),
+    }
+}
+
+/// Title block shared by the reports.
+fn push_header(doc: &mut Document, title: &str, subtitle: &str, byline: &str) {
     let mut p = elements::Paragraph::default();
     p.push_styled(title, Style::new().bold().with_font_size(16));
     doc.push(p);
     let mut p = elements::Paragraph::default();
     p.push_styled(subtitle, Style::new().with_color(GRAY).with_font_size(10));
+    doc.push(p);
+    let mut p = elements::Paragraph::default();
+    p.push_styled(byline, Style::new().with_color(GRAY).with_font_size(9));
     doc.push(p);
     doc.push(elements::Break::new(1.0));
 }
@@ -125,10 +150,44 @@ pub fn weekly_pdf(db: &Db, week_start: NaiveDate, include_notes: bool) -> Result
             "Mon {week_start} – Sun {week_end}   —   total {} h",
             fmt_hours(rep.total_hours)
         ),
+        &byline(db),
     );
     if rep.groups.is_empty() {
         let mut p = elements::Paragraph::default();
         p.push_styled("No entries this week.", Style::new().with_color(GRAY));
+        doc.push(p);
+        return Ok(doc);
+    }
+    let mut seen = std::collections::HashSet::new();
+    for g in &rep.groups {
+        push_group_header(&mut doc, &g.code, &g.name, g.total_hours);
+        for row in &g.entries {
+            push_entry(
+                &mut doc,
+                &row.entry.work_date.format("%a %m-%d").to_string(),
+                row.entry.hours,
+                &row.entry.description,
+            );
+            maybe_push_notes(&mut doc, db, include_notes, row.entry.task_id, &mut seen);
+        }
+    }
+    Ok(doc)
+}
+
+/// One month's entries grouped by project, chronological.
+pub fn monthly_pdf(db: &Db, month_start: NaiveDate, include_notes: bool) -> Result<Document, String> {
+    let rep = super::monthly(db, month_start).map_err(|e| e.to_string())?;
+    let label = month_start.format("%B %Y").to_string();
+    let mut doc = document(&format!("Timesheet — {label}"))?;
+    push_header(
+        &mut doc,
+        "Monthly summary",
+        &format!("{label}   —   total {} h", fmt_hours(rep.total_hours)),
+        &byline(db),
+    );
+    if rep.groups.is_empty() {
+        let mut p = elements::Paragraph::default();
+        p.push_styled("No entries this month.", Style::new().with_color(GRAY));
         doc.push(p);
         return Ok(doc);
     }
@@ -164,6 +223,7 @@ pub fn annual_pdf(db: &Db, year: i32, include_notes: bool) -> Result<Document, S
             "{count} entries flagged dev (R&D), grouped by project, chronological   —   total {} h",
             fmt_hours(total)
         ),
+        &byline(db),
     );
     let mut seen = std::collections::HashSet::new();
     for g in &groups {
@@ -467,6 +527,14 @@ mod tests {
     fn weekly_pdf_renders_without_notes() {
         let db = db_with_noted_task();
         let buf = render(weekly_pdf(&db, d("2026-06-29"), false).unwrap());
+        assert!(buf.starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn monthly_pdf_renders() {
+        let db = db_with_noted_task();
+        db.set_setting("report_author", "Test Author").unwrap();
+        let buf = render(monthly_pdf(&db, d("2026-06-01"), true).unwrap());
         assert!(buf.starts_with(b"%PDF"));
     }
 

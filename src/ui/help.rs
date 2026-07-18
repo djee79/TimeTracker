@@ -26,9 +26,36 @@ pub fn show_window(app: &mut WorklogApp, ctx: &egui::Context) {
                     section(ui_, "Reports & exports", reports);
                     section(ui_, "Keyboard shortcuts", shortcuts);
                     section(ui_, "Your data & backups", data);
+                    footer(app, ui_);
                 });
         });
     app.show_help = open;
+}
+
+/// About-footer: the splash artwork with the live version under it.
+fn footer(app: &mut WorklogApp, ui_: &mut egui::Ui) {
+    ui_.add_space(12.0);
+    ui_.separator();
+    ui_.add_space(8.0);
+    let ctx = ui_.ctx().clone();
+    let splash = app.splash.get_or_insert_with(|| crate::ui::load_splash(&ctx));
+    ui_.vertical_centered(|ui_| {
+        let width = ui_.available_width().min(420.0);
+        let size = egui::vec2(width, width * 360.0 / 560.0);
+        let (rect, _) = ui_.allocate_exact_size(size, egui::Sense::hover());
+        ui_.painter().image(
+            splash.texture.id(),
+            rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+        ui_.add_space(4.0);
+        ui_.label(
+            egui::RichText::new(concat!("Worklog v", env!("CARGO_PKG_VERSION")))
+                .weak()
+                .small(),
+        );
+    });
 }
 
 fn section(ui_: &mut egui::Ui, title: &str, body: fn(&mut egui::Ui)) {
@@ -85,7 +112,7 @@ fn journal(ui_: &mut egui::Ui) {
     b(ui_, "The “dev” checkbox marks the entry as R&D; only those go in the annual export.");
     b(ui_, "Filter the list by project, time range, or the search box (every word must match the description or project code, in any order).");
     b(ui_, "The “N entries, X h” counter follows the filters — search a topic to see its total hours.");
-    b(ui_, "✏ edits an entry in place (its creation stamp never changes); 🗑 asks once, then deletes.");
+    b(ui_, "✏ edits an entry in place (its creation stamp never changes); 🗑 asks once, then deletes — and the status bar offers Undo for 10 seconds, restoring the entry with its original stamp.");
     b(ui_, "The status bar always shows “today: X h” — an end-of-day check that nothing was forgotten.");
     b(ui_, "The “notes panel” checkbox shows the selected task's notes beside the journal — handy while writing up what you did.");
     b(ui_, "Entries logged from a task remember it: click the entry's text to pull that task's notes into the panel.");
@@ -105,6 +132,8 @@ fn tasks(ui_: &mut egui::Ui) {
     b(ui_, "📄 opens the task's notes: freeform Markdown (**bold**, # headings, - lists, `code`…) with an Edit/Preview toggle. Closing the window saves.");
     b(ui_, "The editor has a formatting toolbar — select text and click bold/italic/heading/list/etc. (Ctrl+B / Ctrl+I work too). Buttons toggle: click again to unformat.");
     b(ui_, "Hover 📄 for a quick rendered peek; the “notes panel” checkbox keeps the clicked task's notes beside the list.");
+    b(ui_, "Notes with a markdown checklist (- [ ] / - [x]) show their progress on the row, e.g. 2/5 — green once complete.");
+    b(ui_, "🔍 in the top bar (or Ctrl+F) searches journal, tasks and notes in one place.");
     b(ui_, "Order “auto” sorts itself: active, in progress, priority, newest. Order “manual” lets you drag the ☰ grip. “Group by project” splits the list per project.");
 }
 
@@ -118,6 +147,7 @@ fn tracking(ui_: &mut egui::Ui) {
     b(ui_, "The counter means “tracked but not yet logged”: it resets each time you log the task's time, so it always shows what remains unaccounted for.");
     b(ui_, "Hover a task's title to see its tracked time so far.");
     b(ui_, "If the total includes an unbroken stretch of 5 h or more, the strip warns you — the timer was probably left running over lunch or overnight.");
+    b(ui_, "After 10 minutes without keyboard/mouse the timers pause, banking only up to when you stepped away; they resume on activity. Works on Windows, X11, and Wayland compositors with idle-notify (Hyprland, KDE, sway…); where unsupported it turns itself off. Toggle in Projects… → App settings.");
     b(ui_, "For multi-day tasks, use ⏱ log at the end of each day so every slice lands on the right date.");
 }
 
@@ -149,7 +179,8 @@ fn reports(ui_: &mut egui::Ui) {
     b(ui_, "Click any cell to copy it; “Copy full week” and “Export CSV…” take the whole week.");
     p(ui_, "Annual dev export (SR&ED) — every entry marked “dev” for a year, as CSV: date, project code, project name, description, hours.");
     b(ui_, "Entries keep an immutable creation stamp, so the export doubles as contemporaneity evidence.");
-    p(ui_, "Both reports also export as PDF — a print-ready layout grouped by project.");
+    p(ui_, "Monthly summary — a whole month grouped by project, with copy, CSV and PDF like the weekly.");
+    p(ui_, "All reports also export as PDF (US letter) — a print-ready layout grouped by project, with page numbers and a “Prepared by …” line (set your name in Projects… → App settings).");
     b(ui_, "“PDF with task notes” includes each entry's task notes (rendered markdown) under it; a task logged several times has its notes printed once.");
 }
 
@@ -159,6 +190,7 @@ fn shortcuts(ui_: &mut egui::Ui) {
             ("Ctrl+1 / 2 / 3", "switch to Journal / Tasks / Reports"),
             ("Ctrl+N", "new journal entry (jumps to the capture strip)"),
             ("Ctrl+T", "new task (jumps to the task title)"),
+            ("Ctrl+F", "search everything (journal, tasks, notes)"),
             ("Enter", "submits the form you're typing in"),
             ("Esc", "dismisses the “log the time?” strip (first Esc leaves the text field)"),
         ] {
@@ -177,5 +209,6 @@ fn data(ui_: &mut egui::Ui) {
     );
     b(ui_, "The app also does it for you: on the first launch of each day it snapshots the database into the “backups” folder next to it, keeping the 10 most recent.");
     b(ui_, "To restore, close the app and copy a snapshot over worklog.db.");
+    b(ui_, "Set a backup mirror (Projects… → App settings) — a second folder, ideally on another disk or a NAS, that receives each daily snapshot too.");
     b(ui_, "Maintenance is automatic: every launch runs a quick integrity check (a red warning appears in the status bar if it ever fails — restore a backup), the file is compacted monthly, and SQLite tunes itself up on exit. One database holds everything, for all years — at this app's scale SQLite is nowhere near its limits, and keeping history together is what makes search and the annual export work.");
 }

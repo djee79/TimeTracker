@@ -96,6 +96,25 @@ impl Db {
         Ok(())
     }
 
+    /// Put a deleted entry back exactly as it was — original `created_at`
+    /// (the immutable contemporaneity stamp) and task link, fresh id.
+    pub fn reinsert_log_entry(&self, e: &LogEntry) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO log_entries (work_date, project_id, description, hours, is_dev, created_at, task_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                e.work_date.to_string(),
+                e.project_id,
+                e.description,
+                e.hours,
+                e.is_dev,
+                e.created_at.to_rfc3339(),
+                e.task_id,
+            ],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
     pub fn delete_log_entry(&self, id: i64) -> Result<()> {
         self.conn
             .execute("DELETE FROM log_entries WHERE id = ?1", [id])?;

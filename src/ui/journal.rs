@@ -1,4 +1,4 @@
-use crate::app::{today, EntryForm, FilterRange, WorklogApp};
+use crate::app::{today, EntryForm, FilterRange, UndoItem, WorklogApp};
 use crate::report::fmt_hours;
 use crate::ui;
 
@@ -259,8 +259,18 @@ fn entry_list(app: &mut WorklogApp, ui_: &mut egui::Ui) {
         }
         Some(Action::CancelEdit) => app.editing_entry = None,
         Some(Action::Delete(id)) => {
+            let deleted = app
+                .entries
+                .iter()
+                .find(|r| r.entry.id == id)
+                .map(|r| r.entry.clone());
             match app.db.delete_log_entry(id) {
-                Ok(()) => app.set_status("Entry deleted"),
+                Ok(()) => {
+                    app.set_status("Entry deleted");
+                    if let Some(entry) = deleted {
+                        app.offer_undo(UndoItem::Entry(entry));
+                    }
+                }
                 Err(e) => app.set_status(format!("Delete failed: {e}")),
             }
             app.touch();

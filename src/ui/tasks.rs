@@ -1,4 +1,4 @@
-use crate::app::{PendingKind, WorklogApp};
+use crate::app::{PendingKind, UndoItem, WorklogApp};
 use crate::db::{Priority, Task, TaskSort, TaskStatus};
 use crate::ui;
 
@@ -714,6 +714,15 @@ fn task_row(
                     app.start_task_edit(task);
                 }
                 details_button(app, ui_, task);
+                if let Some((done, total)) = task.checklist() {
+                    let text = egui::RichText::new(format!("{done}/{total}")).small();
+                    let text = if done == total {
+                        text.color(egui::Color32::from_rgb(80, 160, 95))
+                    } else {
+                        text.weak()
+                    };
+                    ui_.label(text).on_hover_text("checklist in the notes");
+                }
                 match task.status {
                     TaskStatus::Todo => {
                         if ui_
@@ -1016,8 +1025,19 @@ fn apply(app: &mut WorklogApp, action: Option<Action>) {
             app.set_active_task(Some(id));
         }
         Some(Action::Delete(id)) => {
-            if let Err(e) = app.db.delete_task(id) {
-                app.set_status(format!("Delete failed: {e}"));
+            let deleted = app
+                .open_tasks
+                .iter()
+                .chain(app.done_tasks.iter())
+                .find(|t| t.id == id)
+                .cloned();
+            match app.db.delete_task(id) {
+                Ok(()) => {
+                    if let Some(task) = deleted {
+                        app.offer_undo(UndoItem::Task(task));
+                    }
+                }
+                Err(e) => app.set_status(format!("Delete failed: {e}")),
             }
             if app.active_task_id == Some(id) {
                 app.set_active_task(None);

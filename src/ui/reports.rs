@@ -5,11 +5,88 @@ use crate::report;
 use crate::ui;
 
 pub fn show(app: &mut WorklogApp, ui_: &mut egui::Ui) {
-    weekly_section(app, ui_);
-    ui_.add_space(16.0);
-    ui_.separator();
-    ui_.add_space(8.0);
-    annual_section(app, ui_);
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui_, |ui_| {
+            weekly_section(app, ui_);
+            ui_.add_space(16.0);
+            ui_.separator();
+            ui_.add_space(8.0);
+            monthly_section(app, ui_);
+            ui_.add_space(16.0);
+            ui_.separator();
+            ui_.add_space(8.0);
+            annual_section(app, ui_);
+        });
+}
+
+fn monthly_section(app: &mut WorklogApp, ui_: &mut egui::Ui) {
+    ui_.heading("Monthly summary");
+    ui_.add_space(4.0);
+    ui_.horizontal(|ui_| {
+        if ui_.button("⏴").on_hover_text("previous month").clicked() {
+            app.month_start = app.month_start - chrono::Months::new(1);
+        }
+        ui_.label(
+            egui::RichText::new(app.month_start.format("%B %Y").to_string()).strong(),
+        );
+        if ui_.button("⏵").on_hover_text("next month").clicked() {
+            app.month_start = app.month_start + chrono::Months::new(1);
+        }
+        let this_month = report::month_start_of(today());
+        if app.month_start != this_month && ui_.button("This month").clicked() {
+            app.month_start = this_month;
+        }
+        let rep = report::monthly(&app.db, app.month_start);
+        if let Ok(rep) = &rep {
+            ui_.label(
+                egui::RichText::new(format!("total {} h", report::fmt_hours(rep.total_hours)))
+                    .weak(),
+            );
+        }
+    });
+    ui_.add_space(6.0);
+    let Ok(rep) = report::monthly(&app.db, app.month_start) else {
+        return;
+    };
+    ui_.horizontal(|ui_| {
+        if ui_.button("Copy month").clicked() {
+            ui_.ctx().copy_text(rep.to_text());
+            app.set_status("Month copied to clipboard");
+        }
+        let stamp = app.month_start.format("%Y-%m").to_string();
+        if ui_.button("Export CSV…").clicked() {
+            app.export_csv(&format!("timesheet-{stamp}.csv"), &rep.to_csv());
+        }
+        if ui_.button("Export PDF…").clicked() {
+            let doc = report::pdf::monthly_pdf(&app.db, app.month_start, app.pdf_include_notes);
+            app.export_pdf(&format!("timesheet-{stamp}.pdf"), doc);
+        }
+        notes_option(app, ui_);
+    });
+    // per-project totals at a glance; details live in the preview/exports
+    for g in &rep.groups {
+        ui_.horizontal(|ui_| {
+            ui_.label(egui::RichText::new(&g.code).monospace().strong());
+            ui_.label(egui::RichText::new(format!("{} h", report::fmt_hours(g.total_hours))));
+            ui_.label(egui::RichText::new(&g.name).weak());
+        });
+    }
+    if rep.groups.is_empty() {
+        ui_.label(egui::RichText::new("No entries this month.").weak());
+    }
+    ui_.add_space(4.0);
+    egui::CollapsingHeader::new("Plain-text preview")
+        .id_salt("reports/month_preview")
+        .default_open(false)
+        .show(ui_, |ui_| {
+            egui::Frame::group(ui_.style())
+                .fill(ui_.visuals().extreme_bg_color)
+                .show(ui_, |ui_| {
+                    ui_.set_width(ui_.available_width());
+                    ui_.label(egui::RichText::new(rep.to_text()).monospace());
+                });
+        });
 }
 
 fn weekly_section(app: &mut WorklogApp, ui_: &mut egui::Ui) {

@@ -2,6 +2,7 @@ pub mod help;
 pub mod journal;
 pub mod projects;
 pub mod reports;
+pub mod search;
 pub mod tasks;
 
 use chrono::{Datelike, NaiveDate};
@@ -14,6 +15,35 @@ pub const FOCUS_CAPTURE_DESC: &str = "focus/capture_desc";
 pub const FOCUS_TASK_TITLE: &str = "focus/task_title";
 pub const FOCUS_TASK_EDIT: &str = "focus/task_edit";
 pub const FOCUS_BRIDGE_HOURS: &str = "focus/bridge_hours";
+pub const FOCUS_SEARCH: &str = "focus/search";
+
+/// The splash artwork, loaded once per texture user (boot screen, help
+/// footer). Both sizes draw at 560×360 logical points.
+pub struct Splash {
+    pub texture: egui::TextureHandle,
+    /// Fill behind/around the image (sampled from the art — the corners
+    /// themselves are transparent).
+    pub background: egui::Color32,
+}
+
+pub fn load_splash(ctx: &egui::Context) -> Splash {
+    let bytes: &[u8] = if ctx.pixels_per_point() > 1.25 {
+        include_bytes!("../../assets/SplashScreen/splash-1120x720@2x.png")
+    } else {
+        include_bytes!("../../assets/SplashScreen/splash-560x360.png")
+    };
+    let img = image::load_from_memory(bytes)
+        .expect("bundled splash decodes")
+        .into_rgba8();
+    let p = img.get_pixel(img.width() / 2, 2);
+    let background = egui::Color32::from_rgb(p[0], p[1], p[2]);
+    let size = [img.width() as usize, img.height() as usize];
+    let color = egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw());
+    Splash {
+        texture: ctx.load_texture("splash", color, egui::TextureOptions::LINEAR),
+        background,
+    }
+}
 
 /// True when this widget lost focus because Enter was pressed — the
 /// "type, hit Enter, saved" interaction every form here uses.

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Worklog
+Comment=Work journal, tasks, time tracking, reports
+Exec=worklog
+Icon=worklog
+Terminal=false
+Categories=Office;ProjectManagement;
+StartupWMClass=worklog

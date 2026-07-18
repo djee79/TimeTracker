@@ -1,6 +1,6 @@
 //! Renders sample weekly + annual PDFs with realistic data, for eyeballing
 //! the layout: `cargo run --example pdf_preview -- /tmp/out-dir`
-#![allow(dead_code)] // pulls in whole modules, uses a sliver
+#![allow(dead_code, unused_imports)] // pulls in whole modules, uses a sliver
 #[path = "../src/db/mod.rs"]
 mod db;
 #[path = "../src/report/mod.rs"]

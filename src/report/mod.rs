@@ -24,6 +24,16 @@ pub fn week_start_of(date: NaiveDate) -> NaiveDate {
     date - chrono::Duration::days(date.weekday().num_days_from_monday() as i64)
 }
 
+/// First of the month containing `date`.
+pub fn month_start_of(date: NaiveDate) -> NaiveDate {
+    date.with_day(1).expect("day 1 always exists")
+}
+
+/// Last day of the month starting at `month_start`.
+pub fn month_end_of(month_start: NaiveDate) -> NaiveDate {
+    month_start + chrono::Months::new(1) - chrono::Duration::days(1)
+}
+
 /// Format hours without trailing noise: 8, 1.5, 0.25.
 pub fn fmt_hours(h: f64) -> String {
     let s = format!("{h:.2}");
@@ -104,6 +114,71 @@ impl WeeklyReport {
         out
     }
 
+    pub fn to_csv(&self) -> String {
+        let mut out = String::from("date,project_code,project_name,hours,is_dev,description\n");
+        for g in &self.groups {
+            for row in &g.entries {
+                out.push_str(&csv_row(&[
+                    &row.entry.work_date.to_string(),
+                    &g.code,
+                    &g.name,
+                    &fmt_hours(row.entry.hours),
+                    if row.entry.is_dev { "yes" } else { "no" },
+                    &row.entry.description,
+                ]));
+            }
+        }
+        out
+    }
+}
+
+pub struct MonthlyReport {
+    pub month_start: NaiveDate, // the 1st
+    pub groups: Vec<ProjectGroup>,
+    pub total_hours: f64,
+}
+
+pub fn monthly(db: &Db, month_start: NaiveDate) -> Result<MonthlyReport, rusqlite::Error> {
+    let rows = db.log_entries_in_range(month_start, month_end_of(month_start), false)?;
+    let (groups, total_hours) = group_by_project(rows);
+    Ok(MonthlyReport {
+        month_start,
+        groups,
+        total_hours,
+    })
+}
+
+impl MonthlyReport {
+    pub fn to_text(&self) -> String {
+        let mut out = format!(
+            "{}  —  total {} h\n",
+            self.month_start.format("%B %Y"),
+            fmt_hours(self.total_hours)
+        );
+        if self.groups.is_empty() {
+            out.push_str("\n(no entries this month)\n");
+            return out;
+        }
+        for g in &self.groups {
+            out.push_str(&format!(
+                "\n{} — {}  ({} h)\n",
+                g.code,
+                g.name,
+                fmt_hours(g.total_hours)
+            ));
+            for row in &g.entries {
+                out.push_str(&format!(
+                    "  - {} ({} h): {}\n",
+                    row.entry.work_date.format("%a %d"),
+                    fmt_hours(row.entry.hours),
+                    row.entry.description
+                ));
+            }
+        }
+        out
+    }
+
+    /// Same columns as the weekly CSV.
     pub fn to_csv(&self) -> String {
         let mut out = String::from("date,project_code,project_name,hours,is_dev,description\n");
         for g in &self.groups {
@@ -385,6 +460,22 @@ mod tests {
         let grid = WeekGrid::from_report(&weekly(&db, d("2026-06-29")).unwrap());
         assert_eq!(grid.rows[0].days[0].hours, 3.0);
         assert_eq!(grid.rows[0].days[0].copy_text(), "morning fix; afternoon docs");
+    }
+
+    #[test]
+    fn monthly_groups_full_month() {
+        let db = seeded_db();
+        // July 2026: three entries (the 10th is dev but months don't care)
+        let rep = monthly(&db, d("2026-07-01")).unwrap();
+        assert_eq!(rep.total_hours, 7.5);
+        assert_eq!(rep.groups.len(), 2);
+        let text = rep.to_text();
+        assert!(text.contains("July 2026"));
+        assert!(text.contains("next week, excluded")); // included in the month
+        assert!(!text.contains("wired the panel")); // June entry stays out
+        assert!(monthly(&db, d("2026-08-01")).unwrap().groups.is_empty());
+        assert_eq!(month_start_of(d("2026-07-18")), d("2026-07-01"));
+        assert_eq!(month_end_of(d("2026-02-01")), d("2026-02-28"));
     }
 
     #[test]

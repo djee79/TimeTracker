@@ -17,6 +17,19 @@ Grab a prebuilt binary from the [Releases page](https://github.com/djee79/TimeTr
 - `worklog-linux-x86_64` — built on the latest Ubuntu LTS runner; needs a comparably
   recent glibc. `chmod +x` and run. If your distro is older, build from source instead.
 
+### Linux desktop icon (optional)
+
+The window icon is baked into the binary, but Wayland desktops (Hyprland, KDE,
+GNOME…) show the icon matching the app's `.desktop` entry. To install it:
+
+```sh
+install -Dm644 assets/timetrackerIcons/worklog-256.png \
+  ~/.local/share/icons/hicolor/256x256/apps/worklog.png
+install -Dm644 assets/worklog.desktop ~/.local/share/applications/worklog.desktop
+# point Exec= at wherever your worklog binary lives, then:
+update-desktop-database ~/.local/share/applications 2>/dev/null || true
+```
+
 Releases are cut by pushing a version tag (`git tag v0.1.1 && git push origin v0.1.1`) —
 GitHub Actions tests, builds both binaries, and attaches them
 (`.github/workflows/release.yml`).

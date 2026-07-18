@@ -98,6 +98,33 @@ impl Task {
             .map_or(0, |s| (now - s).num_seconds().max(0));
         self.spent_secs + running
     }
+
+    /// (done, total) markdown checklist items in the notes — `- [x]` style
+    /// markers, also under `*`/`+` bullets and numbered lists. None when the
+    /// notes have no checklist.
+    pub fn checklist(&self) -> Option<(usize, usize)> {
+        let (mut done, mut total) = (0, 0);
+        for line in self.details.lines() {
+            let l = line.trim_start();
+            let rest = l
+                .strip_prefix("- ")
+                .or_else(|| l.strip_prefix("* "))
+                .or_else(|| l.strip_prefix("+ "))
+                .or_else(|| {
+                    let digits = l.chars().take_while(|c| c.is_ascii_digit()).count();
+                    if digits > 0 { l[digits..].strip_prefix(". ") } else { None }
+                });
+            let Some(rest) = rest else { continue };
+            let rest = rest.trim_start();
+            if rest.starts_with("[ ]") {
+                total += 1;
+            } else if rest.starts_with("[x]") || rest.starts_with("[X]") {
+                total += 1;
+                done += 1;
+            }
+        }
+        (total > 0).then_some((done, total))
+    }
 }
 
 fn from_row(row: &Row) -> rusqlite::Result<Task> {
@@ -181,6 +208,50 @@ impl Db {
             rusqlite::params![id, status.as_str(), completed_at],
         )?;
         Ok(())
+    }
+
+    /// Put a deleted task back as it was (fresh id, lands on top of the
+    /// manual order). An in-progress task gets its timer running again.
+    pub fn reinsert_task(&self, t: &Task, now: DateTime<Utc>) -> Result<i64> {
+        let started_at = (t.status == TaskStatus::Doing).then(|| ts(now));
+        self.conn.execute(
+            "INSERT INTO tasks (project_id, title, status, created_at, completed_at, priority,
+                                sort_order, started_at, spent_secs, details)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6,
+                     COALESCE((SELECT MIN(sort_order) FROM tasks), 0.0) - 1.0, ?7, ?8, ?9)",
+            rusqlite::params![
+                t.project_id,
+                t.title,
+                t.status.as_str(),
+                t.created_at.to_rfc3339(),
+                t.completed_at.map(|c| c.to_rfc3339()),
+                t.priority as i64,
+                started_at,
+                t.spent_secs,
+                t.details,
+            ],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Every task (any status) matching each word of `search` in the title,
+    /// project code or notes — the global-search backend.
+    pub fn search_tasks(&self, search: &str, limit: usize) -> Result<Vec<Task>> {
+        let mut sql = format!("{SELECT} WHERE 1=1");
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        for term in search.split_whitespace() {
+            sql.push_str(" AND (t.title LIKE ? OR p.code LIKE ? OR t.details LIKE ?)");
+            let pattern = format!("%{term}%");
+            params.push(Box::new(pattern.clone()));
+            params.push(Box::new(pattern.clone()));
+            params.push(Box::new(pattern));
+        }
+        // open tasks first, then most recent
+        sql.push_str(" ORDER BY t.status = 'done', t.created_at DESC LIMIT ?");
+        params.push(Box::new(limit as i64));
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(params), from_row)?;
+        rows.collect()
     }
 
     pub fn delete_task(&self, id: i64) -> Result<()> {

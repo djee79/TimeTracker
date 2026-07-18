@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use rusqlite::Connection;
 
-pub use log_entry::LogEntryRow;
+pub use log_entry::{LogEntry, LogEntryRow};
 pub use project::{Project, ProjectStatus};
 pub use task::{Priority, Task, TaskSort, TaskStatus};
 
@@ -116,7 +116,12 @@ impl Db {
     /// Snapshot the database into `backups/worklog-YYYY-MM-DD.db` next to the
     /// live file (at most once per day) and prune to the `keep` newest.
     /// Uses VACUUM INTO, so the copy is a consistent snapshot even in WAL mode.
-    pub fn backup_daily(&self, keep: usize) -> std::result::Result<Option<PathBuf>, String> {
+    /// Returns today's snapshot path and whether this call created it (false =
+    /// it already existed), so the caller can mirror it elsewhere either way.
+    pub fn backup_daily(
+        &self,
+        keep: usize,
+    ) -> std::result::Result<Option<(PathBuf, bool)>, String> {
         let Some(parent) = self.path.parent() else {
             return Ok(None); // in-memory db
         };
@@ -125,7 +130,7 @@ impl Db {
         let today = chrono::Local::now().date_naive();
         let target = dir.join(format!("worklog-{today}.db"));
         if target.exists() {
-            return Ok(None); // already backed up today
+            return Ok(Some((target, false))); // already backed up today
         }
         self.conn
             .execute("VACUUM INTO ?1", [target.to_string_lossy().as_ref()])
@@ -145,7 +150,7 @@ impl Db {
         while old.len() > keep {
             let _ = std::fs::remove_file(old.remove(0));
         }
-        Ok(Some(target))
+        Ok(Some((target, true)))
     }
 
     // -- maintenance --
@@ -309,6 +314,65 @@ mod tests {
     }
 
     #[test]
+    fn undo_reinserts_entries_and_tasks_faithfully() {
+        let db = Db::open_in_memory().unwrap();
+        let p = db.insert_project("AAA-001", "Alpha", None).unwrap();
+        let t = db.insert_task(p, "with notes", Priority::High).unwrap();
+        db.set_task_details(t, "- [x] kept").unwrap();
+        db.set_task_status(t, TaskStatus::Doing).unwrap();
+        db.insert_log_entry(d("2026-07-01"), p, "logged", 2.0, true, Some(t))
+            .unwrap();
+
+        // entry: delete, reinsert, original created_at and task link survive
+        let row = db.list_log_entries(None, None, "").unwrap().remove(0);
+        db.delete_log_entry(row.entry.id).unwrap();
+        db.reinsert_log_entry(&row.entry).unwrap();
+        let back = db.list_log_entries(None, None, "").unwrap().remove(0);
+        assert_eq!(back.entry.created_at, row.entry.created_at);
+        assert_eq!(back.entry.task_id, Some(t));
+        assert_eq!(back.entry.hours, 2.0);
+
+        // task: delete, reinsert — status, priority, notes survive; the
+        // in-progress timer is running again
+        let task = db.list_open_tasks(TaskSort::Auto).unwrap().remove(0);
+        db.delete_task(task.id).unwrap();
+        db.reinsert_task(&task, chrono::Utc::now()).unwrap();
+        let back = db.list_open_tasks(TaskSort::Auto).unwrap().remove(0);
+        assert_eq!(back.title, "with notes");
+        assert_eq!(back.status, TaskStatus::Doing);
+        assert_eq!(back.priority, Priority::High);
+        assert_eq!(back.details, "- [x] kept");
+        assert!(back.started_at.is_some());
+    }
+
+    #[test]
+    fn search_tasks_all_statuses_and_notes() {
+        let db = Db::open_in_memory().unwrap();
+        let p = db.insert_project("AAA-001", "Alpha", None).unwrap();
+        let open = db.insert_task(p, "fix the parser", Priority::Normal).unwrap();
+        let done = db.insert_task(p, "old cleanup", Priority::Normal).unwrap();
+        db.set_task_details(done, "remember the parser edge case").unwrap();
+        db.set_task_status(done, TaskStatus::Done).unwrap();
+
+        let hits = db.search_tasks("parser", 10).unwrap();
+        assert_eq!(hits.len(), 2); // title match + notes match
+        assert_eq!(hits[0].id, open); // open tasks sort first
+        assert!(db.search_tasks("nothing here", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn checklist_counts_markdown_task_items() {
+        let db = Db::open_in_memory().unwrap();
+        let p = db.insert_project("AAA-001", "Alpha", None).unwrap();
+        let t = db.insert_task(p, "task", Priority::Normal).unwrap();
+        let task = |db: &Db| db.list_open_tasks(TaskSort::Auto).unwrap().remove(0);
+        assert_eq!(task(&db).checklist(), None);
+        db.set_task_details(t, "## plan\n- [x] one\n- [ ] two\n  1. [X] nested numbered\n* [ ] star\nplain - [ ] not a list? no: dash needed at start")
+            .unwrap();
+        assert_eq!(task(&db).checklist(), Some((2, 4)));
+    }
+
+    #[test]
     fn maintenance_check_and_monthly_vacuum() {
         let db = Db::open_in_memory().unwrap();
         assert_eq!(db.integrity_check().unwrap(), None);
@@ -426,15 +490,15 @@ mod tests {
         let db = Db::open(dir.join("worklog.db")).unwrap();
         db.insert_project("AAA-001", "Alpha", None).unwrap();
 
-        let first = db.backup_daily(10).unwrap();
-        let path = first.expect("first call should produce a backup");
+        let (path, created) = db.backup_daily(10).unwrap().expect("first call backs up");
+        assert!(created);
         assert!(path.exists());
         // the snapshot is a valid database with the data in it
-        let copy = Db::open(path).unwrap();
+        let copy = Db::open(path.clone()).unwrap();
         assert_eq!(copy.list_projects().unwrap().len(), 1);
         drop(copy); // Windows can't delete a file something still has open
-        // second call the same day is a no-op
-        assert_eq!(db.backup_daily(10).unwrap(), None);
+        // second call the same day reports the existing snapshot, creates nothing
+        assert_eq!(db.backup_daily(10).unwrap(), Some((path, false)));
 
         // pruning keeps only the newest N (seed some fake older backups)
         for day in ["2020-01-01", "2020-01-02", "2020-01-03"] {
@@ -449,7 +513,7 @@ mod tests {
             chrono::Local::now().date_naive()
         )))
         .unwrap();
-        let kept = db.backup_daily(2).unwrap().unwrap();
+        let (kept, _) = db.backup_daily(2).unwrap().unwrap();
         let mut names: Vec<String> = std::fs::read_dir(dir.join("backups"))
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
