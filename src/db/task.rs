@@ -240,8 +240,11 @@ impl Db {
         let mut sql = format!("{SELECT} WHERE 1=1");
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         for term in search.split_whitespace() {
-            sql.push_str(" AND (t.title LIKE ? OR p.code LIKE ? OR t.details LIKE ?)");
-            let pattern = format!("%{term}%");
+            sql.push_str(
+                " AND (t.title LIKE ? ESCAPE '\\' OR p.code LIKE ? ESCAPE '\\' \
+                 OR t.details LIKE ? ESCAPE '\\')",
+            );
+            let pattern = super::like_pattern(term);
             params.push(Box::new(pattern.clone()));
             params.push(Box::new(pattern.clone()));
             params.push(Box::new(pattern));
@@ -371,8 +374,11 @@ impl Db {
             params.push(Box::new(since.to_string()));
         }
         for term in search.split_whitespace() {
-            sql.push_str(" AND (t.title LIKE ? OR p.code LIKE ? OR t.details LIKE ?)");
-            let pattern = format!("%{term}%");
+            sql.push_str(
+                " AND (t.title LIKE ? ESCAPE '\\' OR p.code LIKE ? ESCAPE '\\' \
+                 OR t.details LIKE ? ESCAPE '\\')",
+            );
+            let pattern = super::like_pattern(term);
             params.push(Box::new(pattern.clone()));
             params.push(Box::new(pattern.clone()));
             params.push(Box::new(pattern));

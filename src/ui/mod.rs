@@ -51,6 +51,103 @@ pub fn enter_pressed(resp: &egui::Response, ui: &egui::Ui) -> bool {
     resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
 }
 
+/// A stable per-project color: golden-angle hue steps from the id, so the
+/// palette looks random but never changes between runs and neighboring ids
+/// land far apart on the wheel. Saturation/brightness adapt to the theme.
+pub fn project_color(ui: &egui::Ui, project_id: i64) -> egui::Color32 {
+    let hue = (project_id as f32 * 0.618_034) % 1.0; // golden-ratio conjugate
+    let (s, v) = if ui.visuals().dark_mode {
+        (0.55, 0.90)
+    } else {
+        (0.75, 0.62)
+    };
+    egui::ecolor::Hsva::new(hue, s, v, 1.0).into()
+}
+
+/// Case-insensitive "every word matches somewhere" test against a project's
+/// code, name and client — the same contract as the journal search.
+fn project_matches(p: &crate::db::Project, filter: &str) -> bool {
+    filter.split_whitespace().all(|w| {
+        let w = w.to_lowercase();
+        p.code.to_lowercase().contains(&w)
+            || p.name.to_lowercase().contains(&w)
+            || p.client.as_deref().is_some_and(|c| c.to_lowercase().contains(&w))
+    })
+}
+
+/// The searchable project dropdown behind both pickers: a filter box (focused
+/// when the popup opens; Enter picks the first hit) above the project list.
+/// `all_option` adds a "no project" row with that label and doubles as the
+/// unselected button text; `active_only` hides archived projects.
+fn project_picker(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    app_projects: &[crate::db::Project],
+    selected: &mut Option<i64>,
+    all_option: Option<&str>,
+    active_only: bool,
+) -> bool {
+    let mut changed = false;
+    let text = selected
+        .and_then(|id| app_projects.iter().find(|p| p.id == id))
+        .map(|p| p.code.clone())
+        .unwrap_or_else(|| all_option.unwrap_or("project…").into());
+    let filter_id = egui::Id::new((id_salt, "picker_filter"));
+    let open_id = egui::Id::new((id_salt, "picker_open"));
+    let was_open: bool = ui.ctx().data(|d| d.get_temp(open_id)).unwrap_or(false);
+    let inner = egui::ComboBox::from_id_salt(id_salt)
+        .selected_text(text)
+        .height(380.0)
+        .show_ui(ui, |ui| {
+            let mut filter: String =
+                ui.ctx().data(|d| d.get_temp(filter_id)).unwrap_or_default();
+            if !was_open {
+                filter.clear(); // fresh popup, fresh search
+            }
+            let filter_resp = ui.add(
+                egui::TextEdit::singleline(&mut filter)
+                    .hint_text("type to filter…")
+                    .desired_width(f32::INFINITY),
+            );
+            if !was_open {
+                filter_resp.request_focus();
+            }
+            let submit = enter_pressed(&filter_resp, ui);
+            ui.separator();
+            if let Some(label) = all_option
+                && ui.selectable_value(selected, None, label).clicked()
+            {
+                changed = true;
+            }
+            let mut first_match = None;
+            for p in app_projects.iter().filter(|p| {
+                (!active_only || p.status == crate::db::ProjectStatus::Active)
+                    && project_matches(p, &filter)
+            }) {
+                first_match.get_or_insert(p.id);
+                let label = egui::RichText::new(p.label()).color(project_color(ui, p.id));
+                if ui.selectable_value(selected, Some(p.id), label).clicked() {
+                    changed = true;
+                }
+            }
+            match first_match {
+                None => {
+                    ui.label(egui::RichText::new("no project matches").weak());
+                }
+                Some(first) if submit => {
+                    *selected = Some(first);
+                    changed = true;
+                    ui.close();
+                }
+                Some(_) => {}
+            }
+            ui.ctx().data_mut(|d| d.insert_temp(filter_id, filter));
+        });
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(open_id, inner.inner.is_some()));
+    changed
+}
+
 /// Project picker over active projects. `selected` stays None until picked.
 pub fn project_combo(
     ui: &mut egui::Ui,
@@ -58,27 +155,7 @@ pub fn project_combo(
     app_projects: &[crate::db::Project],
     selected: &mut Option<i64>,
 ) -> bool {
-    let mut changed = false;
-    let text = selected
-        .and_then(|id| app_projects.iter().find(|p| p.id == id))
-        .map(|p| p.code.clone())
-        .unwrap_or_else(|| "project…".into());
-    egui::ComboBox::from_id_salt(id_salt)
-        .selected_text(text)
-        .show_ui(ui, |ui| {
-            for p in app_projects
-                .iter()
-                .filter(|p| p.status == crate::db::ProjectStatus::Active)
-            {
-                if ui
-                    .selectable_value(selected, Some(p.id), p.label())
-                    .clicked()
-                {
-                    changed = true;
-                }
-            }
-        });
-    changed
+    project_picker(ui, id_salt, app_projects, selected, None, true)
 }
 
 /// Like `project_combo` but with an "all projects" option, for filters.
@@ -88,27 +165,7 @@ pub fn project_filter_combo(
     app_projects: &[crate::db::Project],
     selected: &mut Option<i64>,
 ) -> bool {
-    let mut changed = false;
-    let text = selected
-        .and_then(|id| app_projects.iter().find(|p| p.id == id))
-        .map(|p| p.code.clone())
-        .unwrap_or_else(|| "all projects".into());
-    egui::ComboBox::from_id_salt(id_salt)
-        .selected_text(text)
-        .show_ui(ui, |ui| {
-            if ui.selectable_value(selected, None, "all projects").clicked() {
-                changed = true;
-            }
-            for p in app_projects {
-                if ui
-                    .selectable_value(selected, Some(p.id), p.label())
-                    .clicked()
-                {
-                    changed = true;
-                }
-            }
-        });
-    changed
+    project_picker(ui, id_salt, app_projects, selected, Some("all projects"), false)
 }
 
 /// Calendar-popup date button (egui_extras uses jiff dates; we live in chrono).

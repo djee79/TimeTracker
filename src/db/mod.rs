@@ -6,11 +6,21 @@ use std::path::PathBuf;
 
 use rusqlite::Connection;
 
-pub use log_entry::{LogEntry, LogEntryRow};
+pub use log_entry::{LogEntry, LogEntryRow, SavedEntry, JOURNAL_LIMIT};
 pub use project::{Project, ProjectStatus};
 pub use task::{Priority, Task, TaskSort, TaskStatus};
 
 pub type Result<T> = std::result::Result<T, rusqlite::Error>;
+
+/// A `%term%` LIKE pattern with the user's `%`, `_` and `\` escaped so they
+/// match literally. Every use must add `ESCAPE '\'` to its LIKE clause.
+pub(crate) fn like_pattern(term: &str) -> String {
+    let escaped = term
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    format!("%{escaped}%")
+}
 
 /// Schema migrations, applied in order. `PRAGMA user_version` tracks how many
 /// have run, so appending a new SQL block here is all a future migration needs.
@@ -278,6 +288,114 @@ mod tests {
 
         db.delete_log_entry(id).unwrap();
         assert_eq!(db.list_log_entries(None, None, "").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn merge_folds_same_day_same_description() {
+        let db = Db::open_in_memory().unwrap();
+        let p = db.insert_project("AAA-001", "Alpha", None).unwrap();
+        let first = db
+            .merge_or_insert_log_entry(d("2026-07-20"), p, "Update AVEVA", 2.0, false, None)
+            .unwrap();
+        let SavedEntry::Inserted(id) = first else {
+            panic!("first save must insert");
+        };
+
+        // same day, case/whitespace differ → hours fold into the first entry
+        let second = db
+            .merge_or_insert_log_entry(d("2026-07-20"), p, "  update aveva ", 1.5, false, Some(7))
+            .unwrap();
+        assert_eq!(
+            second,
+            SavedEntry::Merged { id, total_hours: 3.5, prev_hours: 2.0, prev_task_id: None }
+        );
+        let all = db.list_log_entries(None, None, "").unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].entry.hours, 3.5);
+        assert_eq!(all[0].entry.description, "Update AVEVA"); // first casing wins
+        assert_eq!(all[0].entry.task_id, Some(7)); // adopted from the merge
+
+        // undoing the merge restores the pre-merge hours and task link
+        db.unmerge_log_entry(id, 2.0, None).unwrap();
+        let all = db.list_log_entries(None, None, "").unwrap();
+        assert_eq!(all[0].entry.hours, 2.0);
+        assert_eq!(all[0].entry.task_id, None);
+        db.unmerge_log_entry(id, 3.5, Some(7)).unwrap(); // put it back for the rest
+
+        // different day, project, dev flag or description → separate entries
+        let p2 = db.insert_project("BBB-002", "Beta", None).unwrap();
+        for (date, proj, desc, dev) in [
+            (d("2026-07-21"), p, "Update AVEVA", false),
+            (d("2026-07-20"), p2, "Update AVEVA", false),
+            (d("2026-07-20"), p, "Update AVEVA", true),
+            (d("2026-07-20"), p, "Update Citect", false),
+        ] {
+            let saved = db
+                .merge_or_insert_log_entry(date, proj, desc, 1.0, dev, None)
+                .unwrap();
+            assert!(matches!(saved, SavedEntry::Inserted(_)));
+        }
+        assert_eq!(db.list_log_entries(None, None, "").unwrap().len(), 5);
+    }
+
+    #[test]
+    fn search_matches_like_wildcards_literally() {
+        let db = Db::open_in_memory().unwrap();
+        let p = db.insert_project("AAA-001", "Alpha", None).unwrap();
+        db.insert_log_entry(d("2026-07-20"), p, "meeting 50% done", 1.0, false, None)
+            .unwrap();
+        db.insert_log_entry(d("2026-07-20"), p, "meeting 50x done", 1.0, false, None)
+            .unwrap();
+        db.insert_log_entry(d("2026-07-20"), p, "wrote spec_v2", 1.0, false, None)
+            .unwrap();
+
+        // % and _ are literal characters, not wildcards
+        let hits = db.list_log_entries(None, None, "50%").unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].entry.description, "meeting 50% done");
+        let hits = db.list_log_entries(None, None, "spec_v2").unwrap();
+        assert_eq!(hits.len(), 1);
+
+        // same contract for the task searches
+        let t = db.insert_task(p, "review 100% coverage", Priority::Normal).unwrap();
+        assert_eq!(db.search_tasks("100%", 10).unwrap().len(), 1);
+        assert!(db.search_tasks("100_", 10).unwrap().is_empty());
+        db.set_task_status(t, TaskStatus::Done).unwrap();
+        assert_eq!(db.list_done_tasks(10, None, "100%").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn dedupe_folds_legacy_duplicates() {
+        let db = Db::open_in_memory().unwrap();
+        let p1 = db.insert_project("AAA-001", "Alpha", None).unwrap();
+        let p2 = db.insert_project("BBB-002", "Beta", None).unwrap();
+
+        // three-way duplicate: keeper is the first, hours sum, task link adopted
+        let keeper = db
+            .insert_log_entry(d("2026-07-20"), p1, "Update AVEVA", 2.0, false, None)
+            .unwrap();
+        db.insert_log_entry(d("2026-07-20"), p1, "update aveva", 1.5, false, Some(4))
+            .unwrap();
+        db.insert_log_entry(d("2026-07-20"), p1, " UPDATE AVEVA ", 0.5, false, None)
+            .unwrap();
+        // near-misses that must survive untouched
+        db.insert_log_entry(d("2026-07-21"), p1, "Update AVEVA", 1.0, false, None)
+            .unwrap();
+        db.insert_log_entry(d("2026-07-20"), p2, "Update AVEVA", 1.0, false, None)
+            .unwrap();
+        db.insert_log_entry(d("2026-07-20"), p1, "Update AVEVA", 1.0, true, None)
+            .unwrap();
+
+        assert_eq!(db.merge_duplicate_log_entries().unwrap(), 2);
+        let all = db.list_log_entries(None, None, "").unwrap();
+        assert_eq!(all.len(), 4);
+        let kept = all.iter().find(|r| r.entry.id == keeper).unwrap();
+        assert_eq!(kept.entry.hours, 4.0);
+        assert_eq!(kept.entry.description, "Update AVEVA");
+        assert_eq!(kept.entry.task_id, Some(4));
+
+        // second pass finds nothing — the cleanup is idempotent
+        assert_eq!(db.merge_duplicate_log_entries().unwrap(), 0);
     }
 
     #[test]

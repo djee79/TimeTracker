@@ -190,7 +190,16 @@ fn list(app: &mut WorklogApp, ui_: &mut egui::Ui) {
                     for (i, p) in app.projects.iter().enumerate() {
                         let archived = p.status == ProjectStatus::Archived;
                         let dim = |t: egui::RichText| if archived { t.weak() } else { t };
-                        ui_.label(dim(egui::RichText::new(&p.code).monospace().strong()));
+                        ui_.horizontal(|ui_| {
+                            let mut swatch =
+                                egui::RichText::new("●").color(ui::project_color(ui_, p.id));
+                            if archived {
+                                swatch = swatch.weak();
+                            }
+                            ui_.label(swatch)
+                                .on_hover_text("this project's color in lists");
+                            ui_.label(dim(egui::RichText::new(&p.code).monospace().strong()));
+                        });
                         ui_.label(dim(egui::RichText::new(&p.name)));
                         ui_.label(dim(egui::RichText::new(p.client.as_deref().unwrap_or(""))));
                         ui_.horizontal(|ui_| {

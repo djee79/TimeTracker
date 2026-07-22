@@ -128,108 +128,51 @@ fn entry_list(app: &mut WorklogApp, ui_: &mut egui::Ui) {
                 .map(|r| fmt_hours(r.entry.hours).chars().count())
                 .max()
                 .unwrap_or(0);
-            let mut last_date = None;
-            for (i, row) in entries.iter().enumerate() {
-                // date subheader whenever the day changes
-                if last_date != Some(row.entry.work_date) {
-                    last_date = Some(row.entry.work_date);
-                    ui_.add_space(6.0);
-                    ui_.label(
-                        egui::RichText::new(row.entry.work_date.format("%A %Y-%m-%d").to_string())
-                            .weak()
-                            .small(),
-                    );
-                }
-
-                if app.editing_entry.as_ref().is_some_and(|(id, _)| *id == row.entry.id) {
-                    // Inline editor
-                    egui::Frame::group(ui_.style()).show(ui_, |ui_| {
-                        ui_.set_width(ui_.available_width());
-                        let mut form = app.editing_entry.as_ref().unwrap().1.clone();
-                        let submit =
-                            ui::entry_form_fields(app, ui_, &mut form, "edit_entry", None, None);
-                        let valid = form.is_valid();
-                        app.editing_entry = Some((row.entry.id, form));
-                        ui_.horizontal(|ui_| {
-                            if ui_.add_enabled(valid, egui::Button::new("Save")).clicked()
-                                || (submit && valid)
-                            {
-                                action = Some(Action::SaveEdit);
-                            }
-                            if ui_.button("Cancel").clicked() {
-                                action = Some(Action::CancelEdit);
-                            }
-                        });
-                    });
-                    continue;
-                }
-
-                ui_.horizontal(|ui_| {
-                    ui_.label(
-                        egui::RichText::new(format!("{:<code_w$}", row.project_code))
-                            .strong()
-                            .monospace(),
-                    )
-                    .on_hover_text(format!(
-                        "recorded {}",
-                        row.entry
-                            .created_at
-                            .with_timezone(&chrono::Local)
-                            .format("%Y-%m-%d %H:%M")
-                    ));
-                    ui_.label(
-                        egui::RichText::new(format!(
-                            "{:>hours_w$} h",
-                            fmt_hours(row.entry.hours)
-                        ))
-                        .monospace(),
-                    );
-                    // fixed slot whether or not the badge is there
-                    ui_.allocate_ui_with_layout(
-                        egui::vec2(26.0, 16.0),
-                        egui::Layout::left_to_right(egui::Align::Center),
-                        |ui_| {
-                            if row.entry.is_dev {
-                                ui::dev_badge(ui_);
-                            }
-                        },
-                    );
-                    ui_.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui_| {
-                        if ui::confirm_delete_button(ui_, &mut app.confirm_delete_entry, row.entry.id)
-                        {
-                            action = Some(Action::Delete(row.entry.id));
-                        }
-                        if ui_.button("edit").clicked() {
-                            action = Some(Action::Edit(i));
-                        }
-                        ui_.with_layout(
-                            egui::Layout::left_to_right(egui::Align::Center),
-                            |ui_| {
-                                let from_task = row.entry.task_id.is_some();
-                                let mut label =
-                                    egui::Label::new(&row.entry.description).truncate();
-                                if from_task {
-                                    label = label.sense(egui::Sense::click());
-                                }
-                                let hover = if from_task {
-                                    format!(
-                                        "{}\n\nclick to show the task's notes",
-                                        row.entry.description
-                                    )
-                                } else {
-                                    row.entry.description.clone()
-                                };
-                                if ui_.add(label).on_hover_text(hover).clicked() {
-                                    app.selected_task_id = row.entry.task_id;
-                                }
-                            },
-                        );
-                    });
+            // One collapsible section per day (entries arrive date-sorted):
+            // fold days you're done reading. State is keyed on the date, so
+            // it survives edits and reloads within the session.
+            let mut day_start = 0;
+            while day_start < entries.len() {
+                let date = entries[day_start].entry.work_date;
+                let day_end = entries[day_start..]
+                    .iter()
+                    .position(|r| r.entry.work_date != date)
+                    .map(|off| day_start + off)
+                    .unwrap_or(entries.len());
+                let day = &entries[day_start..day_end];
+                let day_hours: f64 = day.iter().map(|r| r.entry.hours).sum();
+                ui_.add_space(6.0);
+                egui::CollapsingHeader::new(
+                    egui::RichText::new(format!(
+                        "{} — {} h",
+                        date.format("%A %Y-%m-%d"),
+                        fmt_hours(day_hours)
+                    ))
+                    .weak()
+                    .small(),
+                )
+                .id_salt(("journal/day", date))
+                .default_open(true)
+                .show(ui_, |ui_| {
+                    for (offset, row) in day.iter().enumerate() {
+                        entry_row(app, ui_, day_start + offset, row, code_w, hours_w, &mut action);
+                    }
                 });
+                day_start = day_end;
             }
             if entries.is_empty() {
                 ui_.add_space(16.0);
                 ui_.label(egui::RichText::new("No entries in this range yet.").weak());
+            } else if entries.len() >= crate::db::JOURNAL_LIMIT {
+                ui_.add_space(8.0);
+                ui_.label(
+                    egui::RichText::new(format!(
+                        "Showing the {} most recent entries — narrow the range or search \
+                         to see older ones.",
+                        crate::db::JOURNAL_LIMIT
+                    ))
+                    .weak(),
+                );
             }
         });
 
@@ -277,4 +220,91 @@ fn entry_list(app: &mut WorklogApp, ui_: &mut egui::Ui) {
         }
         None => {}
     }
+}
+
+/// One journal row: fixed-width code and hours, dev badge, description,
+/// edit/delete actions. `i` is the row's index into `app.entries`.
+fn entry_row(
+    app: &mut WorklogApp,
+    ui_: &mut egui::Ui,
+    i: usize,
+    row: &crate::db::LogEntryRow,
+    code_w: usize,
+    hours_w: usize,
+    action: &mut Option<Action>,
+) {
+    if app.editing_entry.as_ref().is_some_and(|(id, _)| *id == row.entry.id) {
+        // Inline editor
+        egui::Frame::group(ui_.style()).show(ui_, |ui_| {
+            ui_.set_width(ui_.available_width());
+            let mut form = app.editing_entry.as_ref().unwrap().1.clone();
+            let submit = ui::entry_form_fields(app, ui_, &mut form, "edit_entry", None, None);
+            let valid = form.is_valid();
+            app.editing_entry = Some((row.entry.id, form));
+            ui_.horizontal(|ui_| {
+                if ui_.add_enabled(valid, egui::Button::new("Save")).clicked()
+                    || (submit && valid)
+                {
+                    *action = Some(Action::SaveEdit);
+                }
+                if ui_.button("Cancel").clicked() {
+                    *action = Some(Action::CancelEdit);
+                }
+            });
+        });
+        return;
+    }
+
+    ui_.horizontal(|ui_| {
+        ui_.label(
+            egui::RichText::new(format!("{:<code_w$}", row.project_code))
+                .strong()
+                .monospace()
+                .color(ui::project_color(ui_, row.entry.project_id)),
+        )
+        .on_hover_text(format!(
+            "recorded {}",
+            row.entry
+                .created_at
+                .with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M")
+        ));
+        ui_.label(
+            egui::RichText::new(format!("{:>hours_w$} h", fmt_hours(row.entry.hours)))
+                .monospace(),
+        );
+        // fixed slot whether or not the badge is there
+        ui_.allocate_ui_with_layout(
+            egui::vec2(26.0, 16.0),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui_| {
+                if row.entry.is_dev {
+                    ui::dev_badge(ui_);
+                }
+            },
+        );
+        ui_.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui_| {
+            if ui::confirm_delete_button(ui_, &mut app.confirm_delete_entry, row.entry.id) {
+                *action = Some(Action::Delete(row.entry.id));
+            }
+            if ui_.button("edit").clicked() {
+                *action = Some(Action::Edit(i));
+            }
+            ui_.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui_| {
+                let from_task = row.entry.task_id.is_some();
+                let mut label = egui::Label::new(&row.entry.description).truncate();
+                if from_task {
+                    label = label.sense(egui::Sense::click());
+                }
+                let hover = if from_task {
+                    format!("{}\n\nclick to show the task's notes", row.entry.description)
+                } else {
+                    row.entry.description.clone()
+                };
+                if ui_.add(label).on_hover_text(hover).clicked() {
+                    app.selected_task_id = row.entry.task_id;
+                }
+            });
+        });
+    });
 }

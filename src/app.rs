@@ -3,7 +3,8 @@ use std::time::Instant;
 use chrono::{Datelike, NaiveDate};
 
 use crate::db::{
-    Db, LogEntry, LogEntryRow, Priority, Project, ProjectStatus, Task, TaskSort, TaskStatus,
+    Db, LogEntry, LogEntryRow, Priority, Project, ProjectStatus, SavedEntry, Task, TaskSort,
+    TaskStatus,
 };
 use crate::report::{self, WeeklyReport};
 use crate::ui;
@@ -18,6 +19,7 @@ pub enum Tab {
 /// How far back the journal list looks.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum FilterRange {
+    Today,
     Days7,
     Days30,
     Days90,
@@ -25,7 +27,8 @@ pub enum FilterRange {
 }
 
 impl FilterRange {
-    pub const ALL: [FilterRange; 4] = [
+    pub const ALL: [FilterRange; 5] = [
+        FilterRange::Today,
         FilterRange::Days7,
         FilterRange::Days30,
         FilterRange::Days90,
@@ -34,6 +37,7 @@ impl FilterRange {
 
     pub fn label(self) -> &'static str {
         match self {
+            FilterRange::Today => "today",
             FilterRange::Days7 => "last 7 days",
             FilterRange::Days30 => "last 30 days",
             FilterRange::Days90 => "last 90 days",
@@ -43,6 +47,7 @@ impl FilterRange {
 
     pub fn since(self, today: NaiveDate) -> Option<NaiveDate> {
         let days = match self {
+            FilterRange::Today => 0,
             FilterRange::Days7 => 7,
             FilterRange::Days30 => 30,
             FilterRange::Days90 => 90,
@@ -148,10 +153,18 @@ pub struct TaskDetails {
     pub preview: bool,
 }
 
-/// A just-deleted record, kept so the status bar can offer Undo for a bit.
+/// A just-deleted record (or just-merged entry), kept so the status bar can
+/// offer Undo for a bit.
 pub enum UndoItem {
     Entry(LogEntry),
     Task(Task),
+    /// A merge folded new hours into entry `id`; undo puts back the hours
+    /// and task link it had before.
+    Merge {
+        id: i64,
+        prev_hours: f64,
+        prev_task_id: Option<i64>,
+    },
 }
 
 /// How long the status-bar Undo stays available after a deletion.
@@ -321,6 +334,21 @@ impl WorklogApp {
         match db.integrity_check() {
             Ok(None) => {
                 let _ = db.vacuum_monthly();
+                // One-time: fold duplicates that predate merge-aware logging.
+                // Deliberately after the daily backup, so the pre-merge state
+                // is recoverable; skipped (and retried next boot) on failure.
+                if db.setting("entries_deduped").is_none() {
+                    match db.merge_duplicate_log_entries() {
+                        Ok(folded) => {
+                            if folded > 0 {
+                                report.status =
+                                    Some(format!("Merged {folded} duplicate journal entries"));
+                            }
+                            let _ = db.set_setting("entries_deduped", "1");
+                        }
+                        Err(e) => report.status = Some(format!("Duplicate cleanup failed: {e}")),
+                    }
+                }
             }
             Ok(Some(found)) => {
                 report.db_warning = Some(format!(
@@ -576,6 +604,10 @@ impl WorklogApp {
                 .db
                 .reinsert_task(t, chrono::Utc::now())
                 .map(|_| "Task restored"),
+            UndoItem::Merge { id, prev_hours, prev_task_id } => self
+                .db
+                .unmerge_log_entry(*id, *prev_hours, *prev_task_id)
+                .map(|_| "Merge undone — entry back to its previous hours"),
         };
         match result {
             Ok(msg) => self.set_status(msg),
@@ -662,7 +694,7 @@ impl WorklogApp {
         if description.is_empty() {
             return false;
         }
-        match self.db.insert_log_entry(
+        match self.db.merge_or_insert_log_entry(
             form.work_date,
             project_id,
             description,
@@ -670,7 +702,7 @@ impl WorklogApp {
             form.is_dev,
             form.task_id,
         ) {
-            Ok(_) => {
+            Ok(saved) => {
                 let _ = self
                     .db
                     .set_setting("last_project_id", &project_id.to_string());
@@ -678,12 +710,27 @@ impl WorklogApp {
                     .project(project_id)
                     .map(|p| p.code.clone())
                     .unwrap_or_default();
-                self.set_status(format!(
-                    "Logged {} h on {} — {}",
-                    report::fmt_hours(hours),
-                    code,
-                    form.work_date
-                ));
+                match saved {
+                    SavedEntry::Inserted(_) => self.set_status(format!(
+                        "Logged {} h on {} — {}",
+                        report::fmt_hours(hours),
+                        code,
+                        form.work_date
+                    )),
+                    SavedEntry::Merged { id, total_hours, prev_hours, prev_task_id } => {
+                        let mut msg = format!(
+                            "Logged {} h on {} — merged into existing entry, {} h total",
+                            report::fmt_hours(hours),
+                            code,
+                            report::fmt_hours(total_hours)
+                        );
+                        if total_hours > 24.0 {
+                            msg = format!("⚠ {msg} — more than a day; typo?");
+                        }
+                        self.set_status(msg);
+                        self.offer_undo(UndoItem::Merge { id, prev_hours, prev_task_id });
+                    }
+                }
                 self.touch();
                 true
             }
@@ -834,8 +881,14 @@ pub fn today() -> NaiveDate {
 
 impl Drop for WorklogApp {
     /// Bank running task timers so time with the app closed isn't tracked,
-    /// and let SQLite run its close-time tune-up.
+    /// rescue unsaved notes from a still-open editor window, and let SQLite
+    /// run its close-time tune-up.
     fn drop(&mut self) {
+        if let Some(d) = &self.task_details
+            && d.text != d.saved
+        {
+            let _ = self.db.set_task_details(d.task_id, d.text.trim());
+        }
         let _ = self.db.stop_all_task_timers(chrono::Utc::now());
         self.db.optimize();
     }
@@ -936,8 +989,12 @@ impl eframe::App for WorklogApp {
                     );
                 }
                 match &self.undo_delete {
-                    Some((_, at)) if at.elapsed().as_secs() < UNDO_WINDOW_SECS => {
-                        if ui_.button("↩ Undo delete").clicked() {
+                    Some((item, at)) if at.elapsed().as_secs() < UNDO_WINDOW_SECS => {
+                        let label = match item {
+                            UndoItem::Merge { .. } => "↩ Undo merge",
+                            _ => "↩ Undo delete",
+                        };
+                        if ui_.button(label).clicked() {
                             self.undo_delete_now();
                         }
                         ctx.request_repaint_after(std::time::Duration::from_millis(500));

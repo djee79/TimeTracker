@@ -386,10 +386,12 @@ pub fn details_window(app: &mut WorklogApp, ctx: &egui::Context) {
                                 egui::RichText::new("Nothing here yet — switch to Edit.").weak(),
                             );
                         } else {
-                            egui_commonmark::CommonMarkViewer::new().show(
+                            // show_mut: checkboxes toggle in place; the edit
+                            // lands in d.text and rides the normal save path.
+                            egui_commonmark::CommonMarkViewer::new().show_mut(
                                 ui_,
                                 &mut app.md_cache,
-                                &d.text,
+                                &mut d.text,
                             );
                         }
                     } else {
@@ -493,8 +495,26 @@ pub fn notes_panel(app: &mut WorklogApp, ui_: &mut egui::Ui) {
         .show(ui_, |ui_| {
             if task.details.trim().is_empty() {
                 ui_.label(egui::RichText::new("No notes yet — ✏ to add some.").weak());
-            } else {
+            } else if app.task_details.as_ref().is_some_and(|d| d.task_id == task.id) {
+                // The editor window holds its own (possibly unsaved) copy of
+                // these notes — render read-only so a checkbox toggle here
+                // can't be clobbered by the editor's save.
                 egui_commonmark::CommonMarkViewer::new().show(ui_, &mut app.md_cache, &task.details);
+            } else {
+                let mut text = task.details.clone();
+                let resp = egui_commonmark::CommonMarkViewer::new().show_mut(
+                    ui_,
+                    &mut app.md_cache,
+                    &mut text,
+                );
+                // show_mut flips "[ ]"/"[x]" in the source when a checkbox is
+                // clicked — persist right away, there is no Save button here.
+                if resp.response.changed() {
+                    match app.db.set_task_details(task.id, text.trim()) {
+                        Ok(()) => app.touch(),
+                        Err(e) => app.set_status(format!("Save failed: {e}")),
+                    }
+                }
             }
         });
 }
@@ -670,7 +690,11 @@ fn task_row(
                 *action = Some(Action::SetPriority(task.id, p));
             }
             if show_code {
-                ui_.label(egui::RichText::new(&task.project_code).monospace().weak());
+                ui_.label(
+                    egui::RichText::new(&task.project_code)
+                        .monospace()
+                        .color(ui::project_color(ui_, task.project_id)),
+                );
             }
             if is_active {
                 ui_.label(
@@ -820,21 +844,32 @@ fn grouped_list(app: &mut WorklogApp, ui_: &mut egui::Ui, action: &mut Option<Ac
     codes.sort_unstable();
     codes.dedup();
     for code in codes {
-        let group: Vec<&Task> = tasks.iter().filter(|t| t.project_code == code).collect();
+        let group: Vec<Task> = tasks
+            .iter()
+            .filter(|t| t.project_code == code)
+            .cloned()
+            .collect();
+        let project_id = group.first().map(|t| t.project_id).unwrap_or_default();
         let name = group
             .first()
             .and_then(|t| app.project(t.project_id))
             .map(|p| p.name.clone())
             .unwrap_or_default();
         ui_.add_space(4.0);
-        ui_.label(
+        // Stable id: the title-derived default would change with the task
+        // count and forget the collapsed state on every add/complete.
+        egui::CollapsingHeader::new(
             egui::RichText::new(format!("{code} — {name} ({})", group.len()))
-                .weak()
+                .color(ui::project_color(ui_, project_id))
                 .small(),
-        );
-        for task in group {
-            task_row(app, ui_, task, false, draggable, action);
-        }
+        )
+        .id_salt(("tasks/group", code))
+        .default_open(true)
+        .show(ui_, |ui_| {
+            for task in &group {
+                task_row(app, ui_, task, false, draggable, action);
+            }
+        });
     }
 }
 
