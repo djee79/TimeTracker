@@ -142,15 +142,29 @@ fn entry_list(app: &mut WorklogApp, ui_: &mut egui::Ui) {
                 let day = &entries[day_start..day_end];
                 let day_hours: f64 = day.iter().map(|r| r.entry.hours).sum();
                 ui_.add_space(6.0);
-                egui::CollapsingHeader::new(
-                    egui::RichText::new(format!(
-                        "{} — {} h",
-                        date.format("%A %Y-%m-%d"),
-                        fmt_hours(day_hours)
-                    ))
-                    .weak()
-                    .small(),
-                )
+                // Mixed-style header: quiet date, prominent day total — the
+                // total is what gets scanned when checking a week's logging.
+                let small = egui::TextStyle::Small.resolve(ui_.style());
+                let mut header = egui::text::LayoutJob::default();
+                header.append(
+                    &date.format("%A %Y-%m-%d").to_string(),
+                    0.0,
+                    egui::text::TextFormat {
+                        font_id: small.clone(),
+                        color: ui_.visuals().weak_text_color(),
+                        ..Default::default()
+                    },
+                );
+                header.append(
+                    &format!("   {} h", fmt_hours(day_hours)),
+                    0.0,
+                    egui::text::TextFormat {
+                        font_id: small,
+                        color: ui_.visuals().strong_text_color(),
+                        ..Default::default()
+                    },
+                );
+                egui::CollapsingHeader::new(header)
                 .id_salt(("journal/day", date))
                 .default_open(true)
                 .show(ui_, |ui_| {
