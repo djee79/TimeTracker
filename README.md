@@ -86,6 +86,13 @@ The `?` button (top right) opens the built-in help; the short version:
   top: hours field is already focused, description is the task title — type hours,
   Enter, done. `Skip` logs nothing; `Cancel` is a true undo (status, active chip and
   timer come back); `Esc` skips.
+  - **Find a task** (`Ctrl+K`): the 🔎 box above the list is a fuzzy ("lazy") filter —
+    type the letters you remember, in order, and they needn't be adjacent: `wsp` finds
+    *Website proposal*, `lgnbtn` finds *Fix the login button*. Every word must match
+    (any order) and the project code counts as one, so `web login` narrows by project.
+    The list becomes one flat ranked list, best match first; **Enter starts the top hit
+    and makes it active** — `Ctrl+K`, a few letters, Enter is the whole resume-a-task
+    flow. Esc clears it; if nothing open matches, one link retries over Completed.
   - **Time tracking**: every task carries a stopwatch — a memory aid, never a
     timesheet entry by itself. It runs while the task is in progress *and* the app is
     open (quitting banks it, relaunching resumes it). The "log the time?" strip shows
@@ -107,9 +114,11 @@ The `?` button (top right) opens the built-in help; the short version:
     doing-task to make it active again. Survives restarts.
   - **Group by project**: checkbox above the list swaps status sections for one
     section per project. Persisted.
-  - **Completed**: finished tasks collapse at the bottom, searchable by text and
-    completion date (defaults to the last 30 days), filtered in SQL so years of
-    history stay cheap. `↺` reopens one — its tracked time comes back with it.
+  - **Completed**: finished tasks collapse at the bottom, searchable by text (same
+    fuzzy matching, ranked best-first) and completion date (defaults to the last 30
+    days). SQLite does the narrowing — a subsequence `LIKE` prefilter plus the date
+    bound — so years of history stay cheap; the scorer only ranks what survives.
+    `↺` reopens one — its tracked time comes back with it.
 - **Reports** (Ctrl+3): week picker (any date snaps to its Monday) → a **timesheet grid**,
   projects down, Mon–Sun across. Everything is click-to-copy at the granularity you need:
   an hours **cell** copies that project-day's descriptions, a **project code** copies its
@@ -120,7 +129,8 @@ The `?` button (top right) opens the built-in help; the short version:
 - **Projects…** (top right): small managed list — code, name, optional client.
   Archive instead of delete; history stays intact.
 
-Shortcuts: `Ctrl+N` jump to capture, `Ctrl+T` new task, `Ctrl+1/2/3` switch screens.
+Shortcuts: `Ctrl+N` jump to capture, `Ctrl+T` new task, `Ctrl+K` find a task,
+`Ctrl+F` search everything, `Ctrl+1/2/3` switch screens.
 
 Tip for a "global" shortcut: the window sets Wayland `app_id = worklog`, so bind a
 compositor keybinding that launches/focuses it.
@@ -132,6 +142,7 @@ src/
   main.rs        eframe wiring
   app.rs         WorklogApp state + actions + the eframe::App impl
   db/            rusqlite: schema/migrations (mod.rs), one file per entity
+  fuzzy.rs       fzf-style scorer behind the task searches
   report/        weekly + annual roll-ups, text/CSV rendering
   ui/            one file per screen (journal, tasks, reports) + projects/help
                  windows + shared widgets in mod.rs

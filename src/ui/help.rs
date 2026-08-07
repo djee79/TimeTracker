@@ -133,7 +133,11 @@ fn tasks(ui_: &mut egui::Ui) {
     b(ui_, "The editor has a formatting toolbar — select text and click bold/italic/heading/list/etc. (Ctrl+B / Ctrl+I work too). Buttons toggle: click again to unformat.");
     b(ui_, "Hover 📄 for a quick rendered peek; the “notes panel” checkbox keeps the clicked task's notes beside the list.");
     b(ui_, "Notes with a markdown checklist (- [ ] / - [x]) show their progress on the row, e.g. 2/5 — green once complete.");
-    b(ui_, "🔍 in the top bar (or Ctrl+F) searches journal, tasks and notes in one place.");
+    b(ui_, "🔎 find a task (or Ctrl+K) — the fast way through a long list. Type the letters you remember, in order, and they don't have to be next to each other: “wsp” finds “Website proposal”, “lgnbtn” finds “Fix the login button”.");
+    b(ui_, "The list narrows as you type, best match first — Enter on the top hit starts it and makes it the active task, so “Ctrl+K, few letters, Enter” resumes whatever you were on.");
+    b(ui_, "Several words all have to match, in any order, and the project code counts as one of them: “web login” finds the login task in the WEB project. Esc (or ✖) clears the box.");
+    b(ui_, "While the box has text the list is one flat ranked list — ordering and grouping come back when you clear it. Nothing open matches? The “Look in Completed instead” link retries the same search over finished tasks.");
+    b(ui_, "🔍 in the top bar (or Ctrl+F) searches journal, tasks and notes in one place — same fuzzy matching on task titles.");
     b(ui_, "Order “auto” sorts itself: active, in progress, priority, newest. Order “manual” lets you drag the ☰ grip. “Group by project” splits the list per project.");
 }
 
@@ -169,7 +173,8 @@ fn completed(ui_: &mut egui::Ui) {
         "Finished tasks collect in the “Completed” section at the bottom of the Tasks screen, \
          newest first.",
     );
-    b(ui_, "Filter by text (title, project code or notes) and by completion date — it defaults to the last 30 days; switch to “all” to dig further back.");
+    b(ui_, "Find by text and by completion date — the date defaults to the last 30 days; switch to “all” to dig further back.");
+    b(ui_, "The text box matches like the task finder above: letters in order in the title or project code (“wsp” → “Website proposal”), or the whole word inside the notes. Results come back best match first.");
     b(ui_, "↺ reopens a task as to-do; its previously tracked time comes back with it.");
     b(ui_, "The section keeps its open state, so you can reopen several tasks in a row.");
 }
@@ -190,6 +195,7 @@ fn shortcuts(ui_: &mut egui::Ui) {
             ("Ctrl+1 / 2 / 3", "switch to Journal / Tasks / Reports"),
             ("Ctrl+N", "new journal entry (jumps to the capture strip)"),
             ("Ctrl+T", "new task (jumps to the task title)"),
+            ("Ctrl+K", "find an open task (letters in order; Enter resumes the top hit)"),
             ("Ctrl+F", "search everything (journal, tasks, notes)"),
             ("Enter", "submits the form you're typing in"),
             ("Esc", "dismisses the “log the time?” strip (first Esc leaves the text field)"),

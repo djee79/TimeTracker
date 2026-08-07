@@ -3,6 +3,8 @@
 #![allow(dead_code, unused_imports)] // pulls in whole modules, uses a sliver
 #[path = "../src/db/mod.rs"]
 mod db;
+#[path = "../src/fuzzy.rs"]
+mod fuzzy; // db's task search ranks with it
 #[path = "../src/report/mod.rs"]
 mod report;
 

@@ -3,6 +3,8 @@
 #![allow(dead_code, unused_imports)] // pulls in the whole db module, uses a sliver
 #[path = "../src/db/mod.rs"]
 mod db;
+#[path = "../src/fuzzy.rs"]
+mod fuzzy; // db's task search ranks with it
 
 fn main() {
     match db::Db::open_default() {

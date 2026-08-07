@@ -125,6 +125,62 @@ impl Task {
         }
         (total > 0).then_some((done, total))
     }
+
+    /// Rank against a fuzzy search: `(tier, score)`, ordered by tier first,
+    /// score second (see `fuzzy_filter`). Tier 0 is a fuzzy hit on the
+    /// project code + title — what you actually remember about a task; tier
+    /// 1 is every word turning up somewhere in the notes, which stays plain
+    /// substring matching: fuzzy over pages of prose matches everything.
+    pub fn fuzzy_rank(&self, query: &str) -> Option<(u8, i32)> {
+        let head = format!("{} {}", self.project_code, self.title);
+        // Both, best wins: the code is searchable ("web login"), but scoring
+        // only the combined string would hand every task in a project the
+        // same head start and flatten the ranking between them.
+        let by_title = crate::fuzzy::score_all(query, &self.title);
+        let by_code_and_title = crate::fuzzy::score_all(query, &head);
+        if let Some(score) = by_title.max(by_code_and_title) {
+            return Some((0, score));
+        }
+        let haystack = format!("{head} {}", self.details).to_lowercase();
+        query
+            .split_whitespace()
+            .all(|w| haystack.contains(&w.to_lowercase()))
+            .then_some((1, 0))
+    }
+}
+
+/// Keep the tasks matching `query`, best match first. Stable, so equal ranks
+/// stay in the order they arrived (the list's own sorting survives), and an
+/// empty query passes everything through untouched.
+pub fn fuzzy_filter(tasks: Vec<Task>, query: &str) -> Vec<Task> {
+    if query.trim().is_empty() {
+        return tasks;
+    }
+    let mut ranked: Vec<((u8, std::cmp::Reverse<i32>), Task)> = tasks
+        .into_iter()
+        .filter_map(|t| {
+            t.fuzzy_rank(query)
+                .map(|(tier, score)| ((tier, std::cmp::Reverse(score)), t))
+        })
+        .collect();
+    ranked.sort_by_key(|r| r.0);
+    ranked.into_iter().map(|(_, t)| t).collect()
+}
+
+/// How many rows the SQL prefilter hands the fuzzy ranker. Generous — the
+/// scorer decides what's actually good — but bounded, so a decade of tasks
+/// can't turn a keystroke into a full-table sort.
+const FUZZY_CANDIDATES: usize = 2000;
+
+/// The `WHERE` fragment (and its two parameters) for one search term:
+/// characters in order across "code title", or the word verbatim in the notes.
+fn fuzzy_clause(sql: &mut String, params: &mut Vec<Box<dyn rusqlite::types::ToSql>>, term: &str) {
+    sql.push_str(
+        " AND ((p.code || ' ' || t.title) LIKE ? ESCAPE '\\' \
+         OR t.details LIKE ? ESCAPE '\\')",
+    );
+    params.push(Box::new(super::like_subsequence(term)));
+    params.push(Box::new(super::like_pattern(term)));
 }
 
 fn from_row(row: &Row) -> rusqlite::Result<Task> {
@@ -234,27 +290,26 @@ impl Db {
         Ok(self.conn.last_insert_rowid())
     }
 
-    /// Every task (any status) matching each word of `search` in the title,
-    /// project code or notes — the global-search backend.
+    /// Every task (any status) fuzzy-matching each word of `search` in the
+    /// title/project code, or containing it in the notes — the global-search
+    /// backend. Open tasks first, best match first within each.
     pub fn search_tasks(&self, search: &str, limit: usize) -> Result<Vec<Task>> {
         let mut sql = format!("{SELECT} WHERE 1=1");
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         for term in search.split_whitespace() {
-            sql.push_str(
-                " AND (t.title LIKE ? ESCAPE '\\' OR p.code LIKE ? ESCAPE '\\' \
-                 OR t.details LIKE ? ESCAPE '\\')",
-            );
-            let pattern = super::like_pattern(term);
-            params.push(Box::new(pattern.clone()));
-            params.push(Box::new(pattern.clone()));
-            params.push(Box::new(pattern));
+            fuzzy_clause(&mut sql, &mut params, term);
         }
-        // open tasks first, then most recent
-        sql.push_str(" ORDER BY t.status = 'done', t.created_at DESC LIMIT ?");
-        params.push(Box::new(limit as i64));
+        // most recent first — the tie-break the ranker's stable sort keeps
+        sql.push_str(" ORDER BY t.created_at DESC LIMIT ?");
+        params.push(Box::new(FUZZY_CANDIDATES.max(limit) as i64));
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(rusqlite::params_from_iter(params), from_row)?;
-        rows.collect()
+        let ranked = fuzzy_filter(rows.collect::<Result<Vec<Task>>>()?, search);
+        let (mut open, done): (Vec<Task>, Vec<Task>) =
+            ranked.into_iter().partition(|t| t.status != TaskStatus::Done);
+        open.extend(done);
+        open.truncate(limit);
+        Ok(open)
     }
 
     pub fn delete_task(&self, id: i64) -> Result<()> {
@@ -359,8 +414,10 @@ impl Db {
 
     /// Completed tasks, most recently finished first. `since` bounds the
     /// completion date (local time); every whitespace-separated word of
-    /// `search` must appear in the title, project code or notes, in any order.
-    /// Filtering happens in SQL so a years-old backlog stays cheap to show.
+    /// `search` must fuzzy-match the title/project code or appear in the
+    /// notes, in any order — and a search reorders the list best match
+    /// first. The date bound and the candidate cut happen in SQL, so a
+    /// years-old backlog stays cheap to show.
     pub fn list_done_tasks(
         &self,
         limit: usize,
@@ -373,20 +430,19 @@ impl Db {
             sql.push_str(" AND date(t.completed_at, 'localtime') >= ?");
             params.push(Box::new(since.to_string()));
         }
+        let searching = !search.trim().is_empty();
         for term in search.split_whitespace() {
-            sql.push_str(
-                " AND (t.title LIKE ? ESCAPE '\\' OR p.code LIKE ? ESCAPE '\\' \
-                 OR t.details LIKE ? ESCAPE '\\')",
-            );
-            let pattern = super::like_pattern(term);
-            params.push(Box::new(pattern.clone()));
-            params.push(Box::new(pattern.clone()));
-            params.push(Box::new(pattern));
+            fuzzy_clause(&mut sql, &mut params, term);
         }
         sql.push_str(" ORDER BY t.completed_at DESC LIMIT ?");
-        params.push(Box::new(limit as i64));
+        // Searching, the row cap belongs to the candidate pool, not the
+        // result: cutting at `limit` first would hide better matches.
+        let cap = if searching { FUZZY_CANDIDATES.max(limit) } else { limit };
+        params.push(Box::new(cap as i64));
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(rusqlite::params_from_iter(params), from_row)?;
-        rows.collect()
+        let mut ranked = fuzzy_filter(rows.collect::<Result<Vec<Task>>>()?, search);
+        ranked.truncate(limit);
+        Ok(ranked)
     }
 }

@@ -215,10 +215,16 @@ pub struct WorklogApp {
     pub show_notes_panel: bool,
     /// Layout cache for rendered markdown (egui_commonmark).
     pub md_cache: egui_commonmark::CommonMarkCache,
+    /// Live fuzzy filter over the open-task list — the "which task was that
+    /// again?" box (Ctrl+K). Never persisted: it's a lookup, not a view.
+    pub task_filter: String,
     /// Live text filter for the Completed section (title/project, any order).
     pub done_filter: String,
     /// How far back the Completed section looks.
     pub done_range: FilterRange,
+    /// One-shot: force the Completed section open (the finder handing a
+    /// query over to it when nothing open matched).
+    pub expand_completed: bool,
     /// The one task currently being worked on. Highlighted in the list and
     /// pinned in the top bar so it survives interruptions. Persisted.
     pub active_task_id: Option<i64>,
@@ -386,8 +392,10 @@ impl WorklogApp {
             selected_task_id: None,
             show_notes_panel: false,
             md_cache: egui_commonmark::CommonMarkCache::default(),
+            task_filter: String::new(),
             done_filter: String::new(),
             done_range: FilterRange::Days30,
+            expand_completed: false,
             active_task_id: None,
             group_tasks: false,
             task_sort: TaskSort::Auto,
@@ -524,6 +532,27 @@ impl WorklogApp {
             .db
             .list_done_tasks(200, self.done_range.since(today()), &self.done_filter)
             .unwrap_or_default();
+    }
+
+    /// The open tasks the list should show: everything, or — while the
+    /// finder box has a query — the fuzzy matches, best first.
+    pub fn visible_tasks(&self) -> Vec<Task> {
+        crate::db::task::fuzzy_filter(self.open_tasks.clone(), &self.task_filter)
+    }
+
+    /// True while the finder is narrowing the list (empty box = not filtering).
+    pub fn task_filter_active(&self) -> bool {
+        !self.task_filter.trim().is_empty()
+    }
+
+    /// Hand the finder's query over to the Completed section — the way out
+    /// when the task you're after turns out to be already done.
+    pub fn search_completed(&mut self, query: String) {
+        self.done_filter = query;
+        self.done_range = FilterRange::All;
+        self.expand_completed = true;
+        self.task_filter.clear();
+        self.reload_tasks();
     }
 
     pub fn set_task_sort(&mut self, sort: TaskSort) {
@@ -898,7 +927,7 @@ impl eframe::App for WorklogApp {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
         // Keyboard shortcuts: Ctrl+1/2/3 switch tabs, Ctrl+N quick-capture,
-        // Ctrl+T new task, Ctrl+F search.
+        // Ctrl+T new task, Ctrl+F search, Ctrl+K find an open task.
         let mut had_input = false;
         ctx.input_mut(|i| {
             use egui::{Key, Modifiers};
@@ -923,6 +952,10 @@ impl eframe::App for WorklogApp {
             if i.consume_key(Modifiers::CTRL, Key::F) {
                 self.show_search = true;
                 self.focus_id = Some(egui::Id::new(ui::FOCUS_SEARCH));
+            }
+            if i.consume_key(Modifiers::CTRL, Key::K) {
+                self.tab = Tab::Tasks;
+                self.focus_id = Some(egui::Id::new(ui::FOCUS_TASK_FILTER));
             }
         });
         if had_input {

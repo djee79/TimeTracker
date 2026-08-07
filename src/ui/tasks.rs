@@ -6,9 +6,11 @@ pub fn show(app: &mut WorklogApp, ui_: &mut egui::Ui) {
     bridge_strip(app, ui_);
     add_task_row(app, ui_);
     ui_.separator();
-    list_controls(app, ui_);
 
     let mut action: Option<Action> = None;
+    find_row(app, ui_, &mut action);
+    list_controls(app, ui_);
+
     if app.show_notes_panel {
         egui::Panel::right(egui::Id::new("tasks/notes_panel"))
             .resizable(true)
@@ -24,6 +26,8 @@ pub fn show(app: &mut WorklogApp, ui_: &mut egui::Ui) {
                     if app.open_tasks.is_empty() {
                         ui_.add_space(8.0);
                         ui_.label(egui::RichText::new("No open tasks.").weak());
+                    } else if app.task_filter_active() {
+                        found_list(app, ui_, &mut action);
                     } else if app.group_tasks {
                         grouped_list(app, ui_, &mut action);
                     } else if app.task_sort == TaskSort::Manual {
@@ -570,6 +574,56 @@ fn add_task_row(app: &mut WorklogApp, ui_: &mut egui::Ui) {
     });
 }
 
+/// The task finder: a fuzzy filter over the open list, for when there are
+/// too many tasks to scroll. Type the letters you remember, in order —
+/// "wsp" finds "Website Proposal" — and Enter resumes the top hit.
+fn find_row(app: &mut WorklogApp, ui_: &mut egui::Ui, action: &mut Option<Action>) {
+    ui_.horizontal(|ui_| {
+        ui_.label("🔎");
+        let resp = ui_.add(
+            egui::TextEdit::singleline(&mut app.task_filter)
+                .hint_text("find a task — any letters, in order (Ctrl+K)")
+                .desired_width(280.0),
+        );
+        app.apply_focus(ui::FOCUS_TASK_FILTER, &resp);
+        // Esc clears the box (and a second one leaves it, egui's own doing).
+        if resp.lost_focus() && ui_.input(|i| i.key_pressed(egui::Key::Escape)) {
+            app.task_filter.clear();
+        }
+        if !app.task_filter.is_empty() && ui_.button("✖").on_hover_text("clear (Esc)").clicked() {
+            app.task_filter.clear();
+        }
+        if !app.task_filter_active() {
+            ui_.label(
+                egui::RichText::new("Enter resumes the best match")
+                    .weak()
+                    .small(),
+            );
+            return;
+        }
+        let found = app.visible_tasks();
+        if ui::enter_pressed(&resp, ui_)
+            && let Some(top) = found.first()
+        {
+            app.selected_task_id = Some(top.id);
+            app.set_status(format!("Resumed “{}”", top.title));
+            *action = Some(Action::Activate(top.id));
+            app.task_filter.clear();
+            return;
+        }
+        ui_.label(
+            egui::RichText::new(format!("{} of {} open", found.len(), app.open_tasks.len()))
+                .weak()
+                .small(),
+        );
+        ui_.label(
+            egui::RichText::new("best match first — Enter resumes it")
+                .weak()
+                .small(),
+        );
+    });
+}
+
 fn list_controls(app: &mut WorklogApp, ui_: &mut egui::Ui) {
     ui_.horizontal(|ui_| {
         ui_.label("order:");
@@ -602,9 +656,11 @@ fn list_controls(app: &mut WorklogApp, ui_: &mut egui::Ui) {
             let _ = app.db.set_setting("notes_panel", if panel { "1" } else { "0" });
         }
 
-        let hint = match app.task_sort {
-            TaskSort::Auto => "sorts itself: active, in progress, priority, newest",
-            TaskSort::Manual => "drag ☰ to reorder; new tasks land on top",
+        let hint = match (app.task_filter_active(), app.task_sort) {
+            // finding wins: the best match has to be the first row
+            (true, _) => "finding — order and grouping come back when the box is empty",
+            (false, TaskSort::Auto) => "sorts itself: active, in progress, priority, newest",
+            (false, TaskSort::Manual) => "drag ☰ to reorder; new tasks land on top",
         };
         ui_.label(egui::RichText::new(hint).weak().small());
     });
@@ -808,6 +864,28 @@ fn task_row(
     }
 }
 
+/// Finder mode: one flat list, best match first. Sections, grouping and the
+/// drag grip step aside — while you're searching, row one is the answer.
+fn found_list(app: &mut WorklogApp, ui_: &mut egui::Ui, action: &mut Option<Action>) {
+    let tasks = app.visible_tasks();
+    ui_.add_space(4.0);
+    if tasks.is_empty() {
+        ui_.label(egui::RichText::new("No open task matches.").weak());
+        let query = app.task_filter.clone();
+        if ui_
+            .link("Look in Completed instead")
+            .on_hover_text("same search over finished tasks, all the way back")
+            .clicked()
+        {
+            app.search_completed(query);
+        }
+        return;
+    }
+    for task in &tasks {
+        task_row(app, ui_, task, true, false, action);
+    }
+}
+
 /// Manual mode: one flat list in exactly the user's order.
 fn manual_list(app: &mut WorklogApp, ui_: &mut egui::Ui, action: &mut Option<Action>) {
     let tasks = app.open_tasks.clone();
@@ -877,9 +955,13 @@ fn done_section(app: &mut WorklogApp, ui_: &mut egui::Ui, action: &mut Option<Ac
     let done = app.done_tasks.clone();
     // Stable id: the default (title-derived) id changes with the count, which
     // collapsed the section every time a task was reopened from inside it.
+    // One-shot force-open: the finder handing its query over here. egui
+    // stores the forced state, so clearing the flag doesn't re-collapse it.
+    let force_open = std::mem::take(&mut app.expand_completed).then_some(true);
     egui::CollapsingHeader::new(format!("Completed ({})", done.len()))
         .id_salt("tasks/completed")
         .default_open(false)
+        .open(force_open)
         .show(ui_, |ui_| {
             // Both filters run in SQL (reload on change) so the section stays
             // fast once years of completed tasks pile up.
@@ -887,7 +969,7 @@ fn done_section(app: &mut WorklogApp, ui_: &mut egui::Ui, action: &mut Option<Ac
                 if ui_
                     .add(
                         egui::TextEdit::singleline(&mut app.done_filter)
-                            .hint_text("filter: title or project…")
+                            .hint_text("find: any letters, in order…")
                             .desired_width(220.0),
                     )
                     .changed()

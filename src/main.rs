@@ -2,6 +2,7 @@
 
 mod app;
 mod db;
+mod fuzzy;
 mod idle;
 mod report;
 mod ui;

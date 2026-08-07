@@ -22,6 +22,22 @@ pub(crate) fn like_pattern(term: &str) -> String {
     format!("%{escaped}%")
 }
 
+/// A LIKE pattern matching the term's characters in order with anything in
+/// between (`ab` → `%a%b%`) — the SQL half of the fuzzy task search. It
+/// accepts a superset of what `fuzzy::score` does, so SQLite narrows the
+/// candidates cheaply and the scorer ranks what survives.
+pub(crate) fn like_subsequence(term: &str) -> String {
+    let mut pattern = String::from("%");
+    for c in term.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            pattern.push('\\');
+        }
+        pattern.push(c);
+        pattern.push('%');
+    }
+    pattern
+}
+
 /// Schema migrations, applied in order. `PRAGMA user_version` tracks how many
 /// have run, so appending a new SQL block here is all a future migration needs.
 const MIGRATIONS: &[&str] = &[
@@ -479,6 +495,41 @@ mod tests {
     }
 
     #[test]
+    fn task_search_is_fuzzy_and_ranks_the_best_match_first() {
+        let db = Db::open_in_memory().unwrap();
+        let web = db.insert_project("WEB-001", "Website", None).unwrap();
+        let acc = db.insert_project("ACC-002", "Accounting", None).unwrap();
+        let sewing = db.insert_task(web, "Sewing patterns", Priority::Normal).unwrap();
+        let proposal = db.insert_task(web, "Website proposal", Priority::Normal).unwrap();
+        let login = db.insert_task(acc, "Fix the login button", Priority::Normal).unwrap();
+
+        // letters in order, nowhere near a substring ("Sewing patterns"
+        // trails: it only matches with its project code helping out)
+        let hits = db.search_tasks("wsp", 10).unwrap();
+        assert_eq!(hits[0].id, proposal);
+        // both match "wp", but word starts beat mid-word letters
+        let hits = db.search_tasks("wp", 10).unwrap();
+        assert_eq!(hits[0].id, proposal);
+        assert!(hits.iter().any(|t| t.id == sewing));
+        // terms may land in different fields — code here, title there
+        let hits = db.search_tasks("acc lgn", 10).unwrap();
+        assert_eq!(hits.iter().map(|t| t.id).collect::<Vec<_>>(), [login]);
+        // out of order isn't a match: fuzzy, not anagram
+        assert!(db.search_tasks("psw", 10).unwrap().is_empty());
+        assert!(db.search_tasks("zzz", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn done_task_search_is_fuzzy_too() {
+        let db = Db::open_in_memory().unwrap();
+        let p = db.insert_project("WEB-001", "Website", None).unwrap();
+        let t = db.insert_task(p, "Website proposal", Priority::Normal).unwrap();
+        db.set_task_status(t, TaskStatus::Done).unwrap();
+        assert_eq!(db.list_done_tasks(10, None, "wsp").unwrap().len(), 1);
+        assert!(db.list_done_tasks(10, None, "wspz").unwrap().is_empty());
+    }
+
+    #[test]
     fn checklist_counts_markdown_task_items() {
         let db = Db::open_in_memory().unwrap();
         let p = db.insert_project("AAA-001", "Alpha", None).unwrap();
@@ -674,8 +725,11 @@ mod tests {
         let since = Some(d("2026-01-01"));
         assert_eq!(ids(db.list_done_tasks(10, since, "").unwrap()).len(), 2);
 
-        // search: words match title or project code, any order
-        assert_eq!(ids(db.list_done_tasks(10, None, "api").unwrap()), vec![recent, old]);
+        // search: words match title or project code, any order — and a
+        // search reorders by match quality, not completion date: "api"
+        // starts a word earlier in "fix api endpoint" than in "update api
+        // docs", so it leads even though it was completed years before
+        assert_eq!(ids(db.list_done_tasks(10, None, "api").unwrap()), vec![old, recent]);
         assert_eq!(ids(db.list_done_tasks(10, None, "api BBB").unwrap()), vec![recent]);
         assert_eq!(ids(db.list_done_tasks(10, None, "API").unwrap()).len(), 2); // case-insensitive
         assert!(db.list_done_tasks(10, None, "nope").unwrap().is_empty());

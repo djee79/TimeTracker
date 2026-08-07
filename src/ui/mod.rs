@@ -14,6 +14,7 @@ use crate::app::WorklogApp;
 pub const FOCUS_CAPTURE_DESC: &str = "focus/capture_desc";
 pub const FOCUS_TASK_TITLE: &str = "focus/task_title";
 pub const FOCUS_TASK_EDIT: &str = "focus/task_edit";
+pub const FOCUS_TASK_FILTER: &str = "focus/task_filter";
 pub const FOCUS_BRIDGE_HOURS: &str = "focus/bridge_hours";
 pub const FOCUS_SEARCH: &str = "focus/search";
 
