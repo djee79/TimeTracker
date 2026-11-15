@@ -4,6 +4,10 @@ pub mod projects;
 pub mod reports;
 pub mod search;
 pub mod tasks;
+#[allow(dead_code)] // tokens/widgets land screen by screen
+pub mod theme;
+#[allow(dead_code)]
+pub mod widgets;
 
 use chrono::{Datelike, NaiveDate};
 
@@ -52,17 +56,9 @@ pub fn enter_pressed(resp: &egui::Response, ui: &egui::Ui) -> bool {
     resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
 }
 
-/// A stable per-project color: golden-angle hue steps from the id, so the
-/// palette looks random but never changes between runs and neighboring ids
-/// land far apart on the wheel. Saturation/brightness adapt to the theme.
-pub fn project_color(ui: &egui::Ui, project_id: i64) -> egui::Color32 {
-    let hue = (project_id as f32 * 0.618_034) % 1.0; // golden-ratio conjugate
-    let (s, v) = if ui.visuals().dark_mode {
-        (0.55, 0.90)
-    } else {
-        (0.75, 0.62)
-    };
-    egui::ecolor::Hsva::new(hue, s, v, 1.0).into()
+/// A project's base colour (dots, fills, bars).
+pub fn project_color(_ui: &egui::Ui, project_id: i64) -> egui::Color32 {
+    theme::swatch(None, project_id).base
 }
 
 /// Case-insensitive "every word matches somewhere" test against a project's
@@ -186,39 +182,46 @@ pub fn date_picker(ui: &mut egui::Ui, id_salt: &str, date: &mut NaiveDate) -> bo
     changed
 }
 
-/// The dev flag, rendered the same everywhere.
+/// The dev flag, rendered the same everywhere: an "R&D" switch in a box.
 pub fn dev_checkbox(ui: &mut egui::Ui, is_dev: &mut bool) {
-    ui.checkbox(is_dev, "dev (R&D)")
-        .on_hover_text("Flags this entry for the annual SR&ED / R&D export");
+    widgets::boxed_toggle(
+        ui,
+        is_dev,
+        "R&D",
+        "Flags this entry for the annual SR&ED / R&D export",
+    );
 }
 
-/// Small orange "dev" badge on list rows.
+/// Amber "R&D" badge on list rows.
 pub fn dev_badge(ui: &mut egui::Ui) {
-    ui.label(
-        egui::RichText::new("dev")
-            .small()
-            .color(egui::Color32::from_rgb(230, 150, 40)),
-    );
+    widgets::rd_badge(ui);
 }
 
 /// Two-step inline delete: first click arms it, second confirms.
 /// Returns true when deletion is confirmed.
 pub fn confirm_delete_button(ui: &mut egui::Ui, armed: &mut Option<i64>, id: i64) -> bool {
+    use widgets::icon;
     if *armed == Some(id) {
         let mut confirmed = false;
         if ui
-            .button(egui::RichText::new("confirm").color(ui.visuals().error_fg_color))
+            .add(
+                egui::Button::new(
+                    egui::RichText::new("Delete").color(theme::DANGER).strong(),
+                )
+                .stroke(egui::Stroke::new(1.0, theme::alpha(theme::DANGER, 0.5)))
+                .corner_radius(theme::R_INPUT),
+            )
             .clicked()
         {
             confirmed = true;
             *armed = None;
         }
-        if ui.button("×").on_hover_text("cancel").clicked() {
+        if widgets::icon_button(ui, icon::X, "cancel").clicked() {
             *armed = None;
         }
         confirmed
     } else {
-        if ui.button("🗑").on_hover_text("delete").clicked() {
+        if widgets::icon_button(ui, icon::TRASH, "delete").clicked() {
             *armed = Some(id);
         }
         false

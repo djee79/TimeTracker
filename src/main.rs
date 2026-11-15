@@ -2,6 +2,8 @@
 
 mod app;
 mod db;
+#[cfg(debug_assertions)]
+mod devshot;
 mod fuzzy;
 mod idle;
 mod report;
@@ -130,7 +132,11 @@ impl eframe::App for Boot {
             }
         }
         match self {
-            Boot::Running(app) => app.ui(root, frame),
+            Boot::Running(app) => {
+                #[cfg(debug_assertions)]
+                devshot::tick(app, root.ctx());
+                app.ui(root, frame)
+            }
             Boot::Failed(e) => {
                 egui::CentralPanel::default().show(root, |ui_| {
                     ui_.heading("Worklog could not start");
@@ -142,10 +148,18 @@ impl eframe::App for Boot {
     }
 }
 
+fn initial_size() -> [f32; 2] {
+    #[cfg(debug_assertions)]
+    if devshot::active() {
+        return [1360.0, 900.0];
+    }
+    [1000.0, 700.0]
+}
+
 fn main() -> eframe::Result {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1000.0, 700.0])
+            .with_inner_size(initial_size())
             .with_min_inner_size([720.0, 480.0])
             .with_icon(app_icon())
             .with_app_id("worklog"), // stable Wayland app_id, for WM rules/shortcuts
@@ -154,7 +168,8 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Worklog",
         native_options,
-        Box::new(|_cc| {
+        Box::new(|cc| {
+            ui::theme::apply(&cc.egui_ctx);
             let (tx, rx) = mpsc::channel();
             std::thread::Builder::new()
                 .name("worklog-boot".into())

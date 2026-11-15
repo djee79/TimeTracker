@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>worklog — Notes editor</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0b0b0d}
+a{color:#aab6ff}a:hover{color:#c8d0ff}
+.hov:hover{background:#1f1f25 !important}
+.ib:hover{background:#2a2a32 !important;color:#ececf1 !important}
+.seg:hover{color:#ececf1 !important}
+</style>
+</helmet>
+<div style="width: 960px; height: 820px; box-sizing: border-box; padding: 40px 50px; background: #0b0b0d; display: flex; align-items: flex-start; justify-content: center; color: #ececf1; font-family: Inter, system-ui, sans-serif; font-size: 14px; line-height: 1.4">
+  <div role="dialog" aria-label="Notes for task 02" style="width: 860px; height: 740px; background: #18181c; border: 1px solid #2c2c34; border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,0.55); overflow: hidden; display: flex; flex-direction: column">
+
+    <div style="display: flex; align-items: center; gap: 14px; padding: 16px 16px 14px 24px; border-bottom: 1px solid #24242a">
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0">
+        <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #8e8e9a">Notes</span>
+        <div style="display: flex; align-items: center; gap: 12px">
+          <h2 style="margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em">task 02</h2>
+          <span style="display: flex; align-items: center; gap: 6px; font-size: 12.5px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #7aa2f7"></span><span style="font-family: 'JetBrains Mono', monospace; color: #c9d7fb">Dev Work</span></span>
+          <span style="font-size: 11px; font-weight: 600; color: #f2b04c; background: rgba(242,176,76,0.12); border: 1px solid rgba(242,176,76,0.32); padding: 1px 7px; border-radius: 6px">R&amp;D</span>
+        </div>
+      </div>
+      <button class="ib" aria-label="Collapse" style="width: 36px; height: 36px; border-radius: 9px; border: 0; background: transparent; color: #a9a9b5; display: grid; place-items: center; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 15 6-6 6 6"></path></svg></button>
+      <button class="ib" aria-label="Close" style="width: 36px; height: 36px; border-radius: 9px; border: 0; background: transparent; color: #a9a9b5; display: grid; place-items: center; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #24242a; background: #151518">
+      <div role="tablist" aria-label="View" style="display: flex; gap: 2px; padding: 3px; background: #0f0f12; border: 1px solid #2a2a31; border-radius: 9px">
+        <button class="seg" role="tab" aria-selected="false" style="height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #a9a9b5; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">Edit</button>
+        <button role="tab" aria-selected="true" style="height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: #2c2c35; color: #ffffff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer">Split</button>
+        <button class="seg" role="tab" aria-selected="false" style="height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #a9a9b5; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">Preview</button>
+      </div>
+      <span aria-hidden="true" style="width: 1px; height: 22px; background: #2a2a31"></span>
+      <div role="toolbar" aria-label="Formatting" style="display: flex; align-items: center; gap: 2px">
+        <button class="ib" aria-label="Bold (Ctrl+B)" title="Bold  Ctrl+B" style="width: 32px; height: 32px; border-radius: 7px; border: 0; background: transparent; color: #c9c9d2; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"></path></svg></button>
+        <button class="ib" aria-label="Italic (Ctrl+I)" title="Italic  Ctrl+I" style="width: 32px; height: 32px; border-radius: 7px; border: 0; background: transparent; color: #c9c9d2; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M10 5h8M6 19h8M14 5l-4 14"></path></svg></button>
+        <button class="ib" aria-label="Strikethrough" title="Strikethrough" style="width: 32px; height: 32px; border-radius: 7px; border: 0; background: transparent; color: #c9c9d2; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 12h16M16 6.5c-.8-1-2.2-1.5-4-1.5-2.5 0-4 1.2-4 3 0 1.3.8 2.3 2.5 3M8 17.5c.8 1 2.3 1.5 4.2 1.5 2.5 0 4-1.2 4-3"></path></svg></button>
+        <button class="ib" aria-label="Inline code" title="Inline code" style="width: 32px; height: 32px; border-radius: 7px; border: 0; background: transparent; color: #c9c9d2; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 8-4 4 4 4M15 8l4 4-4 4"></path></svg></button>
+        <span aria-hidden="true" style="width: 1px; height: 18px; background: #2a2a31; margin: 0 6px"></span>
+        <button class="ib" aria-label="Heading" title="Heading" style="width: 32px; height: 32px; border-radius: 7px; border: 0; background: transparent; color: #c9c9d2; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 5v14M18 5v14M6 12h12"></path></svg></button>
+        <button class="ib" aria-label="Bulleted list" title="Bulleted list" style="width: 32px; height: 32px; border-radius: 7px; border: 0; background: transparent; color: #c9c9d2; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10"></path><circle cx="5" cy="6" r="1" fill="currentColor"></circle><circle cx="5" cy="12" r="1" fill="currentColor"></circle><circle cx="5" cy="18" r="1" fill="currentColor"></circle></svg></button>
+        <button class="ib" aria-label="Numbered list" title="Numbered list" style="width: 32px; height: 32px; border-radius: 7px; border: 0; background: transparent; color: #c9c9d2; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10M4 5l1.5-1v5M3.5 14.5c.3-.6.9-1 1.6-1 .9 0 1.4.6 1.4 1.3 0 1-2.9 2-2.9 3.2h3"></path></svg></button>
+        <button class="ib" aria-label="Checklist" title="Checklist" style="width: 32px; height: 32px; border-radius: 7px; border: 0; background: rgba(139,156,255,0.16); color: #c8d0ff; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3.5"></rect><path d="m8 12 3 3 5-6"></path></svg></button>
+        <span aria-hidden="true" style="width: 1px; height: 18px; background: #2a2a31; margin: 0 6px"></span>
+        <button class="ib" aria-label="Toggle checkbox (Ctrl+Enter)" title="Toggle checkbox  Ctrl+Enter" style="width: 32px; height: 32px; border-radius: 7px; border: 0; background: transparent; color: #c9c9d2; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3.5"></rect></svg></button>
+        <button class="ib" aria-label="Code block" title="Code block" style="width: 32px; height: 32px; border-radius: 7px; border: 0; background: transparent; color: #c9c9d2; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="m10 10-2 2 2 2M14 10l2 2-2 2"></path></svg></button>
+        <button class="ib" aria-label="Table" title="Table" style="width: 32px; height: 32px; border-radius: 7px; border: 0; background: transparent; color: #c9c9d2; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"></rect><path d="M3.5 10h17M3.5 15h17M10 10v9.5"></path></svg></button>
+        <button class="ib" aria-label="Divider" title="Divider" style="width: 32px; height: 32px; border-radius: 7px; border: 0; background: transparent; color: #c9c9d2; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 12h16"></path></svg></button>
+      </div>
+      <div style="flex: 1"></div>
+      <span style="font-size: 12px; color: #8e8e9a">Markdown</span>
+    </div>
+
+    <div style="flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr))">
+      <div style="display: flex; background: #0f0f12; border-right: 1px solid #24242a; font-family: 'JetBrains Mono', monospace; font-size: 13.5px; line-height: 26px">
+        <div aria-hidden="true" style="width: 44px; flex: none; padding: 14px 10px 0 0; box-sizing: border-box; text-align: right; color: #85858f; border-right: 1px solid #1d1d22; display: flex; flex-direction: column">
+          <span>1</span><span>2</span><span style="color: #c9c9d2">3</span>
+        </div>
+        <div aria-label="Markdown source" style="flex: 1; padding: 14px 16px 0; display: flex; flex-direction: column; white-space: pre">
+          <span><span style="color: #85858f">- </span><span style="color: #8b9cff">[x]</span><span style="color: #ececf1"> do one thing</span></span>
+          <span><span style="color: #85858f">- </span><span style="color: #8b9cff">[x]</span><span style="color: #ececf1"> do two thing</span></span>
+          <span style="display: flex; align-items: center; background: #17171c; margin: 0 -16px; padding: 0 16px"><span style="color: #85858f">- </span><span style="color: #8b9cff">[ ]</span><span> </span><span style="width: 2px; height: 18px; background: #8b9cff"></span></span>
+        </div>
+      </div>
+      <div aria-label="Preview" style="padding: 18px 24px; display: flex; flex-direction: column; gap: 4px; background: #18181c">
+        <label style="display: flex; align-items: center; gap: 12px; padding: 7px 0; font-size: 14px; color: #9a9aa6; text-decoration: line-through; cursor: pointer"><input type="checkbox" checked style="width: 16px; height: 16px; margin: 0; accent-color: #8b9cff">do one thing</label>
+        <label style="display: flex; align-items: center; gap: 12px; padding: 7px 0; font-size: 14px; color: #9a9aa6; text-decoration: line-through; cursor: pointer"><input type="checkbox" checked style="width: 16px; height: 16px; margin: 0; accent-color: #8b9cff">do two thing</label>
+        <label style="display: flex; align-items: center; gap: 12px; padding: 7px 0; font-size: 14px; color: #85858f; cursor: pointer"><input type="checkbox" style="width: 16px; height: 16px; margin: 0; accent-color: #8b9cff">New item</label>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 12px 16px 12px 24px; border-top: 1px solid #24242a; background: #151518">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #9a9aa6">
+        <span style="padding: 2px 7px; border: 1px solid #2a2a31; border-radius: 5px">**bold**</span>
+        <span style="padding: 2px 7px; border: 1px solid #2a2a31; border-radius: 5px"># heading</span>
+        <span style="padding: 2px 7px; border: 1px solid #2a2a31; border-radius: 5px">- list</span>
+        <span style="padding: 2px 7px; border: 1px solid #2a2a31; border-radius: 5px">- [ ] todo</span>
+        <span style="padding: 2px 7px; border: 1px solid #2a2a31; border-radius: 5px">`code`</span>
+      </div>
+      <div style="flex: 1"></div>
+      <span style="display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #f2b04c"><span style="width: 7px; height: 7px; border-radius: 50%; background: #f2b04c"></span>Unsaved changes</span>
+      <span style="font-size: 12.5px; color: #c8d0ff; font-family: 'JetBrains Mono', monospace">2 / 3</span>
+      <button class="ib" style="height: 36px; padding: 0 14px; border-radius: 9px; border: 1px solid #2c2c34; background: transparent; color: #d6d6de; font: inherit; font-size: 13px; cursor: pointer">Discard</button>
+      <button style="height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 16px; border: 0; border-radius: 9px; background: #8b9cff; color: #0f1330; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer">Save<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; color: #2a3270">Ctrl S</span></button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":960,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
