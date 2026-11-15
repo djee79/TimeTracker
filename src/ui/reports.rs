@@ -69,9 +69,8 @@ fn stepper(
     step
 }
 
-/// "Nov 9 – 15, 2026" / "Oct 27 – Nov 2, 2026" as a jiff strftime string
-/// for the Monday (the end of the range goes in as literal text).
-fn week_label_format(start: NaiveDate) -> String {
+/// "Nov 9 – 15, 2026" (month and year repeated only when they change).
+fn week_label(start: NaiveDate) -> String {
     let end = start + chrono::Duration::days(6);
     let tail = if end.month() == start.month() {
         end.format("%-d, %Y").to_string()
@@ -79,9 +78,9 @@ fn week_label_format(start: NaiveDate) -> String {
         end.format("%b %-d, %Y").to_string()
     };
     if end.year() != start.year() {
-        format!("      %b %-d, %Y – {tail}")
+        format!("{} – {tail}", start.format("%b %-d, %Y"))
     } else {
-        format!("      %b %-d – {tail}")
+        format!("{} – {tail}", start.format("%b %-d"))
     }
 }
 
@@ -122,31 +121,10 @@ fn weekly_header(app: &mut WorklogApp, ui_: &mut egui::Ui, text: &str, missing: 
                 v.inactive.bg_stroke = Stroke::NONE;
                 v.hovered.bg_stroke = Stroke::NONE;
                 ui_.spacing_mut().button_padding = vec2(10.0, 7.0);
-                let mut jd = jiff::civil::Date::new(
-                    pick.year() as i16,
-                    pick.month() as i8,
-                    pick.day() as i8,
-                )
-                .unwrap_or_default();
-                let resp = ui_.add(
-                    egui_extras::DatePickerButton::new(&mut jd)
-                        .id_salt("reports/week")
-                        .show_icon(false)
-                        .format(week_label_format(pick))
-                        .calendar_week(true),
-                );
-                ui_.painter().text(
-                    pos2(resp.rect.left() + 11.0, resp.rect.center().y),
-                    Align2::LEFT_CENTER,
-                    icon::CALENDAR_BLANK,
-                    t::icon_font(15.0),
-                    t::MUTED,
-                );
-                if let Some(d) =
-                    NaiveDate::from_ymd_opt(jd.year() as i32, jd.month() as u32, jd.day() as u32)
-                {
-                    pick = d;
-                }
+                let label = week_label(pick);
+                crate::ui::date_picker::show(ui_, "reports/week", &mut pick, Some(label), &mut |m| {
+                    app.day_markers(m)
+                });
             });
             if pick != app.week_start {
                 // calendar jump: any date snaps to its Monday

@@ -32,6 +32,10 @@ pub const COUNT_PILL: Color32 = hex(0x26262d);
 pub const TEXT: Color32 = hex(0xececf1);
 pub const TEXT_2: Color32 = hex(0xc9c9d2);
 pub const MUTED: Color32 = hex(0x9a9aa6);
+/// Weekend day numbers in the date picker (between TEXT_2 and MUTED).
+pub const WEEKEND_TEXT: Color32 = hex(0xa9a9b5);
+/// Quick-pick button text.
+pub const TEXT_SOFT: Color32 = hex(0xd6d6de);
 pub const FAINT: Color32 = hex(0x85858f);
 pub const DISABLED: Color32 = hex(0x4a4a52);
 

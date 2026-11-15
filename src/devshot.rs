@@ -5,7 +5,8 @@
 //! XDG_DATA_HOME=/tmp/wl WORKLOG_SHOT=/tmp/journal.png WORKLOG_SHOT_VIEW=journal cargo run
 //! ```
 //!
-//! `WORKLOG_SHOT_VIEW`: journal | tasks | reports | calendar | projects | notes | help.
+//! `WORKLOG_SHOT_VIEW`: journal | tasks | reports | calendar | calendar_sel | qc | picker |
+//! picker_months | projects | notes | bridge | help | search.
 
 use std::cell::RefCell;
 
@@ -50,6 +51,12 @@ pub fn tick(app: &mut WorklogApp, ctx: &egui::Context) {
                     app.tab = Tab::Calendar;
                     crate::ui::calendar::open_import(app);
                 }
+                "picker" | "picker_months" => crate::ui::date_picker::open(
+                    ctx,
+                    "capture/date",
+                    app.capture.work_date,
+                    view == "picker_months",
+                ),
                 "projects" => app.show_projects = true,
                 "help" => app.show_help = true,
                 "search" => {

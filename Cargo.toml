@@ -13,11 +13,9 @@ eframe = "0.35.0"
 egui = "0.35.0"
 egui_commonmark = { version = "0.24.0", default-features = false, features = ["pulldown_cmark"] }
 egui-phosphor = "0.13.0"
-egui_extras = { version = "0.35.0", features = ["datepicker"] }
 genpdf = "0.2.0"
 # png decode only — for the embedded window icon
 image = { version = "0.25", default-features = false, features = ["png"] }
-jiff = "0.2.31"
 pulldown-cmark = { version = "0.13", default-features = false }
 rfd = "0.17.2"
 rusqlite = { version = "0.40.1", features = ["bundled"] }

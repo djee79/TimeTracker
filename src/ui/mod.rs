@@ -1,4 +1,5 @@
 pub mod calendar;
+pub mod date_picker;
 pub mod help;
 pub mod journal;
 pub mod notes;
@@ -11,7 +12,7 @@ pub mod tasks;
 pub mod theme;
 pub mod widgets;
 
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 
 use crate::app::WorklogApp;
 
@@ -218,37 +219,15 @@ pub fn project_filter_combo(
     project_picker(ui, id_salt, app_projects, selected, Some("All projects"), false)
 }
 
-/// Calendar-popup date button (egui_extras uses jiff dates; we live in
-/// chrono). Reads "Today, Nov 15" for today, with a calendar icon.
-pub fn date_picker(ui: &mut egui::Ui, id_salt: &str, date: &mut NaiveDate) -> bool {
-    let mut jd = jiff::civil::Date::new(date.year() as i16, date.month() as i8, date.day() as i8)
-        .unwrap_or_default();
-    let format = if *date == crate::app::today() {
-        "      Today, %b %-d"
-    } else if date.year() == crate::app::today().year() {
-        "      %a, %b %-d"
-    } else {
-        "      %b %-d, %Y"
-    };
-    let resp = ui.add(
-        egui_extras::DatePickerButton::new(&mut jd)
-            .id_salt(id_salt)
-            .show_icon(false)
-            .format(format)
-            .calendar_week(true),
-    );
-    ui.painter().text(
-        egui::pos2(resp.rect.left() + 13.0, resp.rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        widgets::icon::CALENDAR_BLANK,
-        theme::icon_font(15.0),
-        theme::MUTED,
-    );
-    let new = NaiveDate::from_ymd_opt(jd.year() as i32, jd.month() as u32, jd.day() as u32)
-        .unwrap_or(*date);
-    let changed = new != *date;
-    *date = new;
-    changed
+/// The themed date button + popover (see `date_picker`), with marker dots
+/// from the journal. Reads "Today, Nov 15" for today.
+pub fn date_picker(
+    app: &mut WorklogApp,
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    date: &mut NaiveDate,
+) -> bool {
+    date_picker::show(ui, id_salt, date, None, &mut |m| app.day_markers(m))
 }
 
 /// The dev flag, rendered the same everywhere: an "R&D" switch in a box.
@@ -323,7 +302,7 @@ pub fn entry_form_fields(
             project_combo(ui, &format!("{id_salt}/proj"), &projects, &mut form.project_id);
         });
         field(ui, "Date", &mut |ui| {
-            date_picker(ui, &format!("{id_salt}/date"), &mut form.work_date);
+            date_picker(app, ui, &format!("{id_salt}/date"), &mut form.work_date);
         });
     });
     field(ui, "Hours", &mut |ui| {

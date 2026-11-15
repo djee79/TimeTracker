@@ -466,7 +466,9 @@ fn mark_day_card(app: &mut WorklogApp, ui_: &mut egui::Ui) {
     side_card(t::alpha(base, 0.45)).show(ui_, |ui_| {
         ui_.set_width(ui_.available_width());
         ui_.spacing_mut().item_spacing.y = 14.0;
-        let form = &mut app.cal_form;
+        // owned for the frame, so the date picker below can borrow `app`
+        let mut owned = std::mem::replace(&mut app.cal_form, DayOffForm::new(day));
+        let form = &mut owned;
         // title row
         ui_.horizontal(|ui_| {
             ui_.with_layout(Layout::right_to_left(Align::Min), |ui_| {
@@ -532,7 +534,7 @@ fn mark_day_card(app: &mut WorklogApp, ui_: &mut egui::Ui) {
                 ui_.label(RichText::new("Until").font(t::font(12.0, Weight::Medium)).color(t::MUTED));
                 ui_.scope(|ui_| {
                     ui::field_style(ui_);
-                    ui::date_picker(ui_, "calendar/range_end", &mut form.range_end);
+                    ui::date_picker(app, ui_, "calendar/range_end", &mut form.range_end);
                 });
                 let n = holidays::weekdays_in(day, form.range_end).len();
                 ui_.label(RichText::new(format!("{n} weekday{}", if n == 1 { "" } else { "s" })).size(12.0).color(t::MUTED));
@@ -573,7 +575,8 @@ fn mark_day_card(app: &mut WorklogApp, ui_: &mut egui::Ui) {
                 save = true;
             }
         });
-        let form = form.clone();
+        let form = owned.clone();
+        app.cal_form = owned;
         if save {
             let dates = if form.range {
                 holidays::weekdays_in(day, form.range_end)

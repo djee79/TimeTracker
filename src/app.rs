@@ -322,6 +322,8 @@ pub struct WorklogApp {
     pub cal_form: DayOffForm,
     pub qc_import: Option<QcImport>,
     cal_cache: Option<(NaiveDate, u64, std::rc::Rc<CalData>)>,
+    /// Date-picker marker dots for one visible month.
+    marker_cache: Option<(NaiveDate, u64, std::rc::Rc<ui::date_picker::DayMarkers>)>,
 
     // Global search (Ctrl+F)
     pub show_search: bool,
@@ -500,6 +502,7 @@ impl WorklogApp {
             cal_form: DayOffForm::new(today),
             qc_import: None,
             cal_cache: None,
+            marker_cache: None,
             show_search: false,
             search_query: String::new(),
             undo_delete: None,
@@ -1134,6 +1137,53 @@ impl WorklogApp {
         data
     }
 
+    /// The date picker's marker dots for the 6 weeks shown with `month`,
+    /// cached per data version (same queries as the Calendar).
+    pub fn day_markers(&mut self, month: NaiveDate) -> std::rc::Rc<ui::date_picker::DayMarkers> {
+        use ui::date_picker::{Marker, marker};
+        if let Some((m, v, data)) = &self.marker_cache
+            && *m == month
+            && *v == self.data_version
+        {
+            return data.clone();
+        }
+        let (from, to) = crate::ui::calendar::visible_range(month);
+        let mut hours: std::collections::HashMap<NaiveDate, Vec<(i64, f64)>> = Default::default();
+        for (d, pid, h) in self.db.hours_by_day_project(from, to).unwrap_or_default() {
+            hours.entry(d).or_default().push((pid, h));
+        }
+        let off: std::collections::HashMap<NaiveDate, crate::db::DayOffKind> = self
+            .db
+            .days_off_between(from, to)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|o| (o.date, o.kind))
+            .collect();
+        let missing = self.missing_between(from, to);
+        let mut out = ui::date_picker::DayMarkers::new();
+        let mut day = from;
+        while day <= to {
+            let m = marker(
+                hours.get(&day).map(Vec::as_slice).unwrap_or(&[]),
+                off.get(&day).copied(),
+                missing.contains(&day),
+            );
+            let color = match m {
+                Some(Marker::Project(pid)) => Some(self.project_swatch(pid).base),
+                Some(Marker::DayOff(kind)) => Some(ui::calendar::kind_colors(kind).0),
+                Some(Marker::Missing) => Some(ui::theme::AMBER),
+                None => None,
+            };
+            if let Some(c) = color {
+                out.insert(day, c);
+            }
+            day += chrono::Duration::days(1);
+        }
+        let out = std::rc::Rc::new(out);
+        self.marker_cache = Some((month, self.data_version, out.clone()));
+        out
+    }
+
     /// Calendar → Journal: show just that day's entries.
     pub fn open_journal_day(&mut self, day: NaiveDate) {
         self.filter_day = Some(day);
@@ -1216,7 +1266,9 @@ impl eframe::App for WorklogApp {
         // Keyboard shortcuts: Ctrl+1–4 (or bare 1–4) switch tabs, Ctrl+N quick-capture,
         // Ctrl+T new task, Ctrl+F search, Ctrl+K find an open task.
         let mut had_input = false;
-        let typing = ctx.egui_wants_keyboard_input();
+        // an open date picker takes Esc and the bare keys
+        let picker_open = ui::date_picker::begin_frame(&ctx);
+        let typing = ctx.egui_wants_keyboard_input() || picker_open;
         ctx.input_mut(|i| {
             use egui::{Key, Modifiers};
             had_input = !i.events.is_empty() || i.pointer.is_moving();
