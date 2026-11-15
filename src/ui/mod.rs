@@ -1,6 +1,7 @@
 pub mod help;
 pub mod journal;
 pub mod notes;
+pub mod notes_editor;
 pub mod projects;
 pub mod reports;
 pub mod search;

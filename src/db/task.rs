@@ -239,6 +239,15 @@ impl Db {
         Ok(())
     }
 
+    /// True when any journal entry logged from this task is flagged R&D.
+    pub fn task_has_dev_entries(&self, id: i64) -> Result<bool> {
+        self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM log_entries WHERE task_id = ?1 AND is_dev = 1)",
+            [id],
+            |r| r.get(0),
+        )
+    }
+
     pub fn set_task_details(&self, id: i64, details: &str) -> Result<()> {
         self.conn.execute(
             "UPDATE tasks SET details = ?2 WHERE id = ?1",

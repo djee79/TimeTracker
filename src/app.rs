@@ -144,16 +144,31 @@ pub struct PendingLog {
     pub form: EntryForm,
 }
 
+/// The notes editor's view.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NoteMode {
+    Edit,
+    Split,
+    Preview,
+}
+
 /// State of the task-notes window: one task's markdown details being
 /// viewed or edited. Closing the window saves.
 pub struct TaskDetails {
     pub task_id: i64,
     pub task_title: String,
+    pub project_code: String,
+    pub swatch: ui::theme::Swatch,
+    /// Some of this task's journal entries are flagged R&D.
+    pub is_dev: bool,
     pub text: String,
     /// Last saved copy — drives the "unsaved" hint.
     pub saved: String,
-    /// Rendered view vs the raw-markdown editor.
-    pub preview: bool,
+    /// None = pick by width (Split when the window is ≥ 800 px wide).
+    pub mode: Option<NoteMode>,
+    pub collapsed: bool,
+    /// Esc with unsaved changes: showing the "close without saving?" bar.
+    pub confirm_close: bool,
 }
 
 /// A just-deleted record (or just-merged entry), kept so the status bar can
@@ -665,9 +680,14 @@ impl WorklogApp {
         self.task_details = Some(TaskDetails {
             task_id: task.id,
             task_title: task.title.clone(),
+            project_code: task.project_code.clone(),
+            swatch: self.project_swatch(task.project_id),
+            is_dev: self.db.task_has_dev_entries(task.id).unwrap_or(false),
             text: task.details.clone(),
             saved: task.details.clone(),
-            preview: !task.details.trim().is_empty(),
+            mode: None,
+            collapsed: false,
+            confirm_close: false,
         });
     }
 
@@ -1149,7 +1169,7 @@ impl eframe::App for WorklogApp {
         });
 
         ui::projects::show_window(self, &ctx);
-        ui::tasks::details_window(self, &ctx);
+        ui::notes_editor::details_window(self, &ctx);
         ui::search::show_window(self, &ctx);
         ui::help::show_window(self, &ctx);
     }

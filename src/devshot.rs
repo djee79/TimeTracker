@@ -49,7 +49,13 @@ pub fn tick(app: &mut WorklogApp, ctx: &egui::Context) {
                 }
                 "notes" => {
                     app.tab = Tab::Tasks;
-                    if let Some(t) = app.open_tasks.first().cloned() {
+                    let pick = app
+                        .open_tasks
+                        .iter()
+                        .find(|t| !t.details.trim().is_empty())
+                        .or(app.open_tasks.first())
+                        .cloned();
+                    if let Some(t) = pick {
                         app.open_task_details(&t);
                     }
                 }
