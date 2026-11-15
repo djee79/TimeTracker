@@ -52,6 +52,10 @@ pub fn tick(app: &mut WorklogApp, ctx: &egui::Context) {
                 }
                 "projects" => app.show_projects = true,
                 "help" => app.show_help = true,
+                "search" => {
+                    app.show_search = true;
+                    app.search_query = "task".into();
+                }
                 "bridge" => {
                     if let Some(t) = app.active_task().cloned() {
                         app.stop_and_log(&t);

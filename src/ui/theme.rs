@@ -101,7 +101,6 @@ pub const R_INPUT: u8 = 9;
 pub const R_ICON: u8 = 8;
 pub const R_PILL: u8 = 255;
 
-pub const H_INPUT: f32 = 34.0;
 pub const H_SMALL: f32 = 30.0;
 pub const PAGE_PAD: i8 = 24;
 pub const CARD_PAD: i8 = 18;

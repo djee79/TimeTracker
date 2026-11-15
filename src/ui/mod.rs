@@ -8,9 +8,7 @@ pub mod reports;
 pub mod search;
 pub mod shell;
 pub mod tasks;
-#[allow(dead_code)] // tokens/widgets land screen by screen
 pub mod theme;
-#[allow(dead_code)]
 pub mod widgets;
 
 use chrono::{Datelike, NaiveDate};

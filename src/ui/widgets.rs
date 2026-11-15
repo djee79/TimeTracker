@@ -54,14 +54,6 @@ pub fn icon_label(ui: &mut Ui, text: &str, size: f32, color: Color32) -> Respons
     ui.label(rich(text, t::font(size, Weight::Regular), color))
 }
 
-pub fn muted(text: impl Into<String>) -> RichText {
-    RichText::new(text).color(t::MUTED)
-}
-
-pub fn faint(text: impl Into<String>) -> RichText {
-    RichText::new(text).color(t::FAINT)
-}
-
 pub fn mono(text: impl Into<String>, size: f32) -> RichText {
     RichText::new(text).font(t::mono(size))
 }
@@ -72,15 +64,6 @@ pub fn mono_semi(text: impl Into<String>, size: f32) -> RichText {
 
 pub fn semibold(text: impl Into<String>, size: f32) -> RichText {
     RichText::new(text).font(t::font(size, Weight::Semibold)).color(t::TEXT)
-}
-
-pub fn medium(text: impl Into<String>, size: f32) -> RichText {
-    RichText::new(text).font(t::font(size, Weight::Medium))
-}
-
-/// Card / section title (16 px, 600).
-pub fn title(ui: &mut Ui, text: &str) -> Response {
-    ui.label(semibold(text, 16.0))
 }
 
 /// Uppercase 11 px label with letter-spacing ("NOTES", "NEW PROJECT").
@@ -356,13 +339,6 @@ pub fn dot(ui: &mut Ui, color: Color32, size: f32) -> Response {
     resp
 }
 
-/// 8 px dot then the code in mono 600, project light colour.
-pub fn project_tag(ui: &mut Ui, code: &str, sw: t::Swatch) {
-    ui.spacing_mut().item_spacing.x = 7.0;
-    dot(ui, sw.base, 8.0);
-    ui.label(mono_semi(code, 13.0).color(sw.light));
-}
-
 // ---- badges / pills ----
 
 pub fn pill(
@@ -473,10 +449,6 @@ pub fn card_frame() -> Frame {
         .stroke(Stroke::new(1.0, t::BORDER))
         .corner_radius(t::R_CARD)
         .inner_margin(Margin::same(t::CARD_PAD))
-}
-
-pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
-    card_frame().show(ui, add).inner
 }
 
 /// Card whose rows touch its edges (list groups, tables).

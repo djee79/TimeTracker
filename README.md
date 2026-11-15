@@ -80,13 +80,14 @@ The `?` button (top right) opens the built-in help; the short version:
   any order — the `N entries, X h` counter follows, so searching a topic totals it).
   Hovering an entry's project code shows when it was recorded (`created_at` is
   immutable — the contemporaneous-record evidence). The status bar always shows
-  `today: X h` as an end-of-day "did I log everything?" check.
+  `Today X h · This week Y h` as an end-of-day "did I log everything?" check, with an
+  amber `⚠ N` when past weekdays this week have no hours.
 - **Tasks** (Ctrl+2): add tasks inline; the list auto-sorts (active task → in-progress →
   priority → newest). Checking a task off pins a prefilled "log the time?" strip at the
   top: hours field is already focused, description is the task title — type hours,
-  Enter, done. `Skip` logs nothing; `Cancel` is a true undo (status, active chip and
+  Enter, done. `Skip` logs nothing; `✕` is a true undo (status, active pill and
   timer come back); `Esc` skips.
-  - **Find a task** (`Ctrl+K`): the 🔎 box above the list is a fuzzy ("lazy") filter —
+  - **Find a task** (`Ctrl+K`): the search box above the list is a fuzzy ("lazy") filter —
     type the letters you remember, in order, and they needn't be adjacent: `wsp` finds
     *Website proposal*, `lgnbtn` finds *Fix the login button*. Every word must match
     (any order) and the project code counts as one, so `web login` narrows by project.
@@ -100,37 +101,53 @@ The `?` button (top right) opens the built-in help; the short version:
     warns when it contains a 5 h+ unbroken stretch, i.e. the timer was probably left
     running. The counter means *tracked but not yet logged*: it resets whenever you
     log, so it always shows the unaccounted remainder.
-  - **⏱ log**: log the time tracked so far *without* closing the task — for multi-day
+  - **Log so far** (clock icon on a running task): log the time tracked so far *without* closing the task — for multi-day
     tasks, log each day's slice on the right date; the final checkbox then only shows
     what's left.
-  - **Priority**: the small `⏶ / – / ⏷` marker on each row cycles high → low → normal
+  - **Priority**: the small arrow / dash on each row cycles high → low → normal
     on click and feeds the auto-sort.
-  - **Manual order**: switch "order:" to *manual* and each row grows a `☰` grip —
+  - **Manual order**: switch Order to *Manual* and each row grows a grip —
     drag rows to arrange them yourself (top = next up). New tasks land on top.
     The arrangement persists; switching back to *auto* keeps it for later.
-  - **Active task**: `▶ start` marks a task in-progress *and* active — its row is
-    highlighted and it's pinned in the top bar on every screen (click the chip to jump
-    back). Got interrupted? `▶ start` the interruption, then `● focus` the original
-    doing-task to make it active again. Survives restarts.
-  - **Group by project**: checkbox above the list swaps status sections for one
+  - **Active task**: `▶ Start` marks a task in-progress *and* active — its row is
+    highlighted and a timer pill in the top bar shows it on every screen, with the
+    live elapsed time, pause, and stop & log (pauses it and opens the "log the time?"
+    banner). Got interrupted? Start the interruption, then the crosshair on the
+    original task makes it active again. Survives restarts.
+  - **Notes**: Markdown per task, in an editor with Edit / Split / Preview (Split shows
+    line-numbered, syntax-coloured source beside the rendered notes), a formatting
+    toolbar, `Ctrl+S` to save and `Ctrl+Enter` to tick the checkbox on the current
+    line. The Notes panel (Journal and Tasks) shows the selected task's checklist as
+    clickable checkboxes, with an "add an item" box.
+  - **Group by project**: switch above the list swaps status sections for one
     section per project. Persisted.
   - **Completed**: finished tasks collapse at the bottom, searchable by text (same
     fuzzy matching, ranked best-first) and completion date (defaults to the last 30
     days). SQLite does the narrowing — a subsequence `LIKE` prefilter plus the date
     bound — so years of history stay cheap; the scorer only ranks what survives.
     `↺` reopens one — its tracked time comes back with it.
-- **Reports** (Ctrl+3): week picker (any date snaps to its Monday) → a **timesheet grid**,
-  projects down, Mon–Sun across. Everything is click-to-copy at the granularity you need:
-  an hours **cell** copies that project-day's descriptions, a **project code** copies its
-  whole week, a **day total** copies that day across all projects, and "Copy full week" /
-  "Export CSV…" cover the rest (plain-text preview collapsed below). Underneath, the
-  annual dev export: pick a year, see the dev-entry count, export CSV
-  (`date, project_code, project_name, description, hours`).
-- **Projects…** (top right): small managed list — code, name, optional client.
-  Archive instead of delete; history stays intact.
+- **Reports** (Ctrl+3): week picker (any date snaps to its Monday) → per-project totals
+  and a **timesheet grid**, projects down, Mon–Sun across. Everything is click-to-copy at
+  the granularity you need: an hours **cell** copies that project-day's descriptions, a
+  **project code** copies its whole week, a **day total** copies that day across all
+  projects, and Copy week / CSV / PDF cover the rest. **Rows follow your office
+  timesheet**: drag them or use ↑ / ↓; the order is saved and used by Copy, CSV, PDF and
+  the monthly summary (Reset to A–Z undoes it). Past weekdays with no hours and no day off
+  turn amber. Below: the monthly summary and the annual dev export (pick a year, see the
+  R&D-entry count, export CSV `date, project_code, project_name, description, hours`, or PDF).
+- **Calendar** (Ctrl+4): the month at a glance — hours per project per day, days off,
+  and missing weekdays. Click a day to mark it off (holiday / vacation / sick / other,
+  optional label, half days, ranges); double-click opens the journal on that day; a week
+  number opens that week in Reports. **Import Québec holidays** previews the statutory
+  holidays for a year (Good Friday *or* Easter Monday — your employer's choice) before
+  adding them; **Office closure…** marks a range. Days off clear the "no hours" warning
+  and are listed in the weekly copy text.
+- **Projects** (top right): code, name, optional client and a colour (used for dots,
+  chips and report cells), hours this month. Archive instead of delete; history stays
+  intact. App settings live here too (backup mirror, PDF name, splash, idle pause delay).
 
 Shortcuts: `Ctrl+N` jump to capture, `Ctrl+T` new task, `Ctrl+K` find a task,
-`Ctrl+F` search everything, `Ctrl+1/2/3` switch screens.
+`Ctrl+F` search everything, `Ctrl+1/2/3/4` (or just `1`–`4` when not typing) switch screens.
 
 Tip for a "global" shortcut: the window sets Wayland `app_id = worklog`, so bind a
 compositor keybinding that launches/focuses it.
@@ -143,16 +160,25 @@ src/
   app.rs         WorklogApp state + actions + the eframe::App impl
   db/            rusqlite: schema/migrations (mod.rs), one file per entity
   fuzzy.rs       fzf-style scorer behind the task searches
-  report/        weekly + annual roll-ups, text/CSV rendering
-  ui/            one file per screen (journal, tasks, reports) + projects/help
-                 windows + shared widgets in mod.rs
+  holidays.rs    Easter, Québec holidays, weekday ranges (days off)
+  report/        weekly + monthly + annual roll-ups, missing weekdays, text/CSV/PDF
+  ui/            one file per screen (journal, tasks, reports, calendar) + projects/
+                 help/search windows and the notes editor; theme.rs holds the design
+                 tokens and fonts, widgets.rs the shared components, shell.rs the
+                 top and status bars
 ```
 
 Migrations are append-only SQL blocks in `src/db/mod.rs::MIGRATIONS`, tracked via
 `PRAGMA user_version`.
 
-`cargo test` covers the DB layer (entries, tasks, timers, filters, backups),
-report grouping/formatting, and hours parsing.
+`cargo test` covers the DB layer (entries, tasks, timers, filters, backups, report
+order, days off, upgrading an older database), report grouping/formatting, missing
+weekdays, Easter/holiday generation, checklist and markdown helpers, and hours parsing.
+
+UI fonts are Inter and JetBrains Mono (SIL OFL, licences in `assets/fonts/`), icons
+from Phosphor. In debug builds, `WORKLOG_SHOT=/path.png WORKLOG_SHOT_VIEW=reports`
+renders one screen to a PNG and exits — point `XDG_DATA_HOME` at a scratch copy of
+the data first.
 
 ## License
 
