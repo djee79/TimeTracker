@@ -172,6 +172,9 @@ fn fonts() -> egui::FontDefinitions {
         egui_phosphor::Variant::Regular.font_data().into(),
     );
     let stack = |primary: &str| -> Vec<String> {
+        // phosphor is only a fallback here: it carries a few ASCII glyphs of
+        // its own, and Inter has some private-use ones — icons are drawn with
+        // the dedicated "icons" family instead (see `widgets::rich`)
         let mut v = vec![primary.to_string(), "phosphor".to_string(), "inter".to_string()];
         v.extend(fallbacks.iter().cloned());
         v
@@ -187,7 +190,21 @@ fn fonts() -> egui::FontDefinitions {
         defs.families
             .insert(FontFamily::Name(fam.into()), stack(primary));
     }
+    defs.families.insert(
+        FontFamily::Name("icons".into()),
+        vec!["phosphor".to_string(), "inter".to_string()],
+    );
     defs
+}
+
+/// Phosphor icons at a size.
+pub fn icon_font(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name("icons".into()))
+}
+
+/// True for Unicode private-use characters — where the icon glyphs live.
+pub fn is_icon_char(c: char) -> bool {
+    ('\u{E000}'..='\u{F8FF}').contains(&c)
 }
 
 /// Fonts, colours and spacing — called once when the app starts.

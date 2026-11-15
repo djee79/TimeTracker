@@ -3,6 +3,7 @@ pub mod journal;
 pub mod projects;
 pub mod reports;
 pub mod search;
+pub mod shell;
 pub mod tasks;
 #[allow(dead_code)] // tokens/widgets land screen by screen
 pub mod theme;

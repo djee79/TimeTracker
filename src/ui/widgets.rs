@@ -13,6 +13,47 @@ pub use egui_phosphor::regular as icon;
 
 // ---- text helpers ----
 
+/// Text that may contain icon glyphs: icon characters get the Phosphor
+/// family (a touch larger), everything else `font`.
+pub fn rich(text: &str, font: egui::FontId, color: Color32) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    let icon_font = t::icon_font(font.size + 2.0);
+    let mut run = String::new();
+    let mut run_is_icon = false;
+    let flush = |job: &mut egui::text::LayoutJob, run: &mut String, is_icon: bool| {
+        if run.is_empty() {
+            return;
+        }
+        let f = if is_icon { icon_font.clone() } else { font.clone() };
+        job.append(
+            run,
+            0.0,
+            egui::TextFormat {
+                font_id: f,
+                color,
+                valign: egui::Align::Center,
+                ..Default::default()
+            },
+        );
+        run.clear();
+    };
+    for c in text.chars() {
+        let is_icon = t::is_icon_char(c);
+        if is_icon != run_is_icon {
+            flush(&mut job, &mut run, run_is_icon);
+            run_is_icon = is_icon;
+        }
+        run.push(c);
+    }
+    flush(&mut job, &mut run, run_is_icon);
+    job
+}
+
+/// A label that may contain icons.
+pub fn icon_label(ui: &mut Ui, text: &str, size: f32, color: Color32) -> Response {
+    ui.label(rich(text, t::font(size, Weight::Regular), color))
+}
+
 pub fn muted(text: impl Into<String>) -> RichText {
     RichText::new(text).color(t::MUTED)
 }
@@ -72,12 +113,8 @@ pub fn kbd(ui: &mut Ui, text: &str) -> Response {
 // ---- buttons ----
 
 /// Accent-filled call to action.
-pub fn primary(text: impl Into<String>) -> egui::Button<'static> {
-    egui::Button::new(
-        RichText::new(text)
-            .font(t::font(13.0, Weight::Semibold))
-            .color(t::ACCENT_INK),
-    )
+pub fn primary(text: impl AsRef<str>) -> egui::Button<'static> {
+    egui::Button::new(rich(text.as_ref(), t::font(13.0, Weight::Semibold), t::ACCENT_INK))
     .fill(t::ACCENT)
     .stroke(Stroke::NONE)
     .corner_radius(t::R_INPUT)
@@ -85,15 +122,15 @@ pub fn primary(text: impl Into<String>) -> egui::Button<'static> {
 }
 
 /// The default framed button (`CONTROL` fill, `BORDER_STRONG` stroke).
-pub fn secondary(text: impl Into<String>) -> egui::Button<'static> {
-    egui::Button::new(medium(text, 13.0).color(t::TEXT_2))
+pub fn secondary(text: impl AsRef<str>) -> egui::Button<'static> {
+    egui::Button::new(rich(text.as_ref(), t::font(13.0, Weight::Medium), t::TEXT_2))
         .corner_radius(t::R_INPUT)
         .min_size(vec2(0.0, t::H_SMALL))
 }
 
 /// Transparent until hovered.
-pub fn ghost(text: impl Into<String>) -> egui::Button<'static> {
-    egui::Button::new(medium(text, 13.0).color(t::TEXT_2))
+pub fn ghost(text: impl AsRef<str>) -> egui::Button<'static> {
+    egui::Button::new(rich(text.as_ref(), t::font(13.0, Weight::Medium), t::TEXT_2))
         .frame_when_inactive(false)
         .corner_radius(t::R_INPUT)
         .min_size(vec2(0.0, t::H_SMALL))
@@ -130,7 +167,7 @@ pub fn icon_button_ex(
             rect.center(),
             Align2::CENTER_CENTER,
             glyph,
-            t::font((size * 0.57).round(), Weight::Regular),
+            t::icon_font((size * 0.57).round()),
             col,
         );
     }
@@ -147,7 +184,7 @@ pub fn round_button(ui: &mut Ui, glyph: &str, tip: &str, filled: bool) -> Respon
         let fill = if hovered { t::ACCENT_TEXT } else { t::ACCENT };
         ui.painter().circle_filled(c, size / 2.0, fill);
         ui.painter()
-            .text(c, Align2::CENTER_CENTER, glyph, t::font(13.0, Weight::Bold), t::ACCENT_INK);
+            .text(c, Align2::CENTER_CENTER, glyph, t::icon_font(14.0), t::ACCENT_INK);
     } else {
         if hovered {
             ui.painter().circle_filled(c, size / 2.0, t::alpha(t::ACCENT, 0.18));
@@ -155,7 +192,7 @@ pub fn round_button(ui: &mut Ui, glyph: &str, tip: &str, filled: bool) -> Respon
         ui.painter()
             .circle_stroke(c, size / 2.0 - 0.5, Stroke::new(1.0, t::alpha(t::ACCENT, 0.6)));
         ui.painter()
-            .text(c, Align2::CENTER_CENTER, glyph, t::font(13.0, Weight::Bold), t::ACCENT_TEXT);
+            .text(c, Align2::CENTER_CENTER, glyph, t::icon_font(14.0), t::ACCENT_TEXT);
     }
     resp.on_hover_text(tip)
 }
@@ -298,7 +335,7 @@ pub fn checkbox(ui: &mut Ui, checked: bool, tip: &str) -> Response {
             b.center(),
             Align2::CENTER_CENTER,
             icon::CHECK,
-            t::font(12.0, Weight::Bold),
+            t::icon_font(13.0),
             t::ACCENT_INK,
         );
     } else {
@@ -397,15 +434,19 @@ pub fn today_badge(ui: &mut Ui) -> Response {
 }
 
 pub fn warn_pill(ui: &mut Ui, text: &str) -> Response {
-    pill(
-        ui,
-        RichText::new(format!("{} {text}", icon::WARNING))
-            .font(t::font(12.0, Weight::Medium))
-            .color(t::AMBER),
-        t::alpha(t::AMBER, 0.10),
-        t::alpha(t::AMBER, 0.32),
-        t::R_PILL,
-    )
+    Frame::new()
+        .fill(t::alpha(t::AMBER, 0.10))
+        .stroke(Stroke::new(1.0, t::alpha(t::AMBER, 0.32)))
+        .corner_radius(t::R_PILL)
+        .inner_margin(Margin::symmetric(9, 2))
+        .show(ui, |ui| {
+            ui.label(rich(
+                &format!("{} {text}", icon::WARNING),
+                t::font(12.0, Weight::Medium),
+                t::AMBER,
+            ))
+        })
+        .response
 }
 
 // ---- containers ----

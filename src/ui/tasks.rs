@@ -62,6 +62,9 @@ fn bridge_strip(app: &mut WorklogApp, ui_: &mut egui::Ui) {
             PendingKind::Midway => {
                 format!("“{}” — log the time so far? (stays open)", pending.task_title)
             }
+            PendingKind::Stopped { .. } => {
+                format!("Stopped: “{}” — log the time?", pending.task_title)
+            }
         };
         ui_.label(egui::RichText::new(title).strong());
         if pending.tracked_secs > 0 {
@@ -116,7 +119,7 @@ fn bridge_strip(app: &mut WorklogApp, ui_: &mut egui::Ui) {
             {
                 keep = false;
             }
-            if matches!(pending.kind, PendingKind::Completed { .. })
+            if matches!(pending.kind, PendingKind::Completed { .. } | PendingKind::Stopped { .. })
                 && ui_
                     .button("Cancel")
                     .on_hover_text("Oops — put the task back as it was, log nothing")
@@ -1107,19 +1110,7 @@ fn apply(app: &mut WorklogApp, action: Option<Action>) {
     match action {
         Some(Action::Complete(task)) => app.complete_task(&task),
         Some(Action::LogSoFar(task)) => app.log_midway(&task),
-        Some(Action::SetStatus(id, status)) => {
-            if let Err(e) = app.db.set_task_status(id, status) {
-                app.set_status(format!("Update failed: {e}"));
-            }
-            // pausing (or reopening to todo) the active task deactivates it
-            if status != TaskStatus::Doing && app.active_task_id == Some(id) {
-                app.set_active_task(None);
-            }
-            if status != TaskStatus::Doing {
-                let _ = app.db.stop_task_timer(id, chrono::Utc::now());
-            }
-            app.touch();
-        }
+        Some(Action::SetStatus(id, status)) => app.change_task_status(id, status),
         Some(Action::SetPriority(id, priority)) => {
             if let Err(e) = app.db.set_task_priority(id, priority) {
                 app.set_status(format!("Update failed: {e}"));
@@ -1133,14 +1124,7 @@ fn apply(app: &mut WorklogApp, action: Option<Action>) {
             }
             app.touch();
         }
-        Some(Action::Activate(id)) => {
-            if let Err(e) = app.db.set_task_status(id, TaskStatus::Doing) {
-                app.set_status(format!("Update failed: {e}"));
-            }
-            let _ = app.db.start_task_timer(id, chrono::Utc::now());
-            app.touch();
-            app.set_active_task(Some(id));
-        }
+        Some(Action::Activate(id)) => app.activate_task(id),
         Some(Action::Delete(id)) => {
             let deleted = app
                 .open_tasks

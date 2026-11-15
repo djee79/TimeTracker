@@ -299,6 +299,27 @@ impl Db {
         )
     }
 
+    /// Total hours per day in [from, to] inclusive; days with nothing
+    /// logged are absent. Feeds the week total and missing-day checks.
+    pub fn daily_hours(&self, from: NaiveDate, to: NaiveDate) -> Result<Vec<(NaiveDate, f64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT work_date, SUM(hours) FROM log_entries
+             WHERE work_date >= ?1 AND work_date <= ?2
+             GROUP BY work_date ORDER BY work_date",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![from.to_string(), to.to_string()], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (d, h) = row?;
+            if let Ok(d) = NaiveDate::parse_from_str(&d, "%Y-%m-%d") {
+                out.push((d, h));
+            }
+        }
+        Ok(out)
+    }
+
     /// All entries in [from, to] inclusive, ordered by project then date —
     /// the shape both reports want.
     pub fn log_entries_in_range(

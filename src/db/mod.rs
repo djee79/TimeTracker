@@ -650,6 +650,11 @@ mod tests {
 
         assert_eq!(db.hours_on(d("2026-07-04")).unwrap(), 3.5);
         assert_eq!(db.hours_on(d("2026-01-01")).unwrap(), 0.0);
+        assert_eq!(
+            db.daily_hours(d("2026-07-01"), d("2026-07-31")).unwrap(),
+            vec![(d("2026-07-03"), 3.0), (d("2026-07-04"), 3.5)]
+        );
+        assert!(db.daily_hours(d("2026-07-05"), d("2026-07-31")).unwrap().is_empty());
     }
 
     #[test]

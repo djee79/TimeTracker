@@ -121,6 +121,9 @@ pub enum PendingKind {
     Completed { prev_status: TaskStatus, was_active: bool },
     /// "Log time so far" on a still-open task; it keeps running.
     Midway,
+    /// Timer stopped from the top bar ("stop & log"): the task went back to
+    /// to-do. "Cancel" restarts it.
+    Stopped { was_active: bool },
 }
 
 /// A single unbroken timer stretch this long probably means the timer was
@@ -280,6 +283,8 @@ pub struct WorklogApp {
     data_version: u64,
     /// Hours logged today, cached per (day, data_version) for the status bar.
     today_hours: Option<(NaiveDate, u64, f64)>,
+    /// Hours logged this week (Mon–Sun), same caching as `today_hours`.
+    week_hours: Option<(NaiveDate, u64, f64)>,
     pub status: Option<(String, Instant)>,
     focus_id: Option<egui::Id>,
 }
@@ -423,6 +428,7 @@ impl WorklogApp {
             db_warning: None,
             data_version: 0,
             today_hours: None,
+            week_hours: None,
             status: None,
             focus_id: None,
         };
@@ -490,6 +496,11 @@ impl WorklogApp {
         self.projects.iter().find(|p| p.id == id)
     }
 
+    /// A project's palette colours (dots, chips, bars, coloured codes).
+    pub fn project_swatch(&self, id: i64) -> ui::theme::Swatch {
+        ui::theme::swatch(None, id)
+    }
+
     pub fn reload_projects(&mut self) {
         self.projects = self.db.list_projects().unwrap_or_default();
     }
@@ -513,6 +524,25 @@ impl WorklogApp {
             _ => {
                 let h = self.db.hours_on(today).unwrap_or(0.0);
                 self.today_hours = Some((today, self.data_version, h));
+                h
+            }
+        }
+    }
+
+    /// Hours logged in the current Monday–Sunday week.
+    pub fn week_hours(&mut self) -> f64 {
+        let today = today();
+        match self.week_hours {
+            Some((d, v, h)) if d == today && v == self.data_version => h,
+            _ => {
+                let start = report::week_start_of(today);
+                let end = start + chrono::Duration::days(6);
+                let h = self
+                    .db
+                    .daily_hours(start, end)
+                    .map(|days| days.iter().map(|(_, h)| h).sum())
+                    .unwrap_or(0.0);
+                self.week_hours = Some((today, self.data_version, h));
                 h
             }
         }
@@ -817,6 +847,46 @@ impl WorklogApp {
         self.touch();
     }
 
+    /// Start (or resume) a task: in progress, timer running, and the active
+    /// task that follows you across screens.
+    pub fn activate_task(&mut self, id: i64) {
+        if let Err(e) = self.db.set_task_status(id, TaskStatus::Doing) {
+            self.set_status(format!("Update failed: {e}"));
+        }
+        let _ = self.db.start_task_timer(id, chrono::Utc::now());
+        self.touch();
+        self.set_active_task(Some(id));
+    }
+
+    /// Change an open task's status. Leaving "doing" stops its timer and,
+    /// for the active task, clears the active slot.
+    pub fn change_task_status(&mut self, id: i64, status: TaskStatus) {
+        if let Err(e) = self.db.set_task_status(id, status) {
+            self.set_status(format!("Update failed: {e}"));
+        }
+        if status != TaskStatus::Doing && self.active_task_id == Some(id) {
+            self.set_active_task(None);
+        }
+        if status != TaskStatus::Doing {
+            let _ = self.db.stop_task_timer(id, chrono::Utc::now());
+        }
+        self.touch();
+    }
+
+    /// Pause = back to to-do with the timer banked.
+    pub fn pause_task(&mut self, id: i64) {
+        self.change_task_status(id, TaskStatus::Todo);
+    }
+
+    /// The top bar's "stop & log": pause the task and offer its time in the
+    /// log bridge on the Tasks screen.
+    pub fn stop_and_log(&mut self, task: &Task) {
+        let was_active = self.active_task_id == Some(task.id);
+        self.pause_task(task.id);
+        self.open_bridge(task, PendingKind::Stopped { was_active });
+        self.tab = Tab::Tasks;
+    }
+
     /// Called when the bridge's entry was saved: the tracked counter has been
     /// logged, so it starts over from zero (any still-running stretch counts
     /// from where the bridge opened).
@@ -828,8 +898,10 @@ impl WorklogApp {
     /// Undo a completion from the bridge ("Cancel"): the task goes back to
     /// the exact state it was in — status, active flag, running timer.
     pub fn undo_complete(&mut self, pending: &PendingLog) {
-        let PendingKind::Completed { prev_status, was_active } = pending.kind else {
-            return;
+        let (prev_status, was_active) = match pending.kind {
+            PendingKind::Completed { prev_status, was_active } => (prev_status, was_active),
+            PendingKind::Stopped { was_active } => (TaskStatus::Doing, was_active),
+            PendingKind::Midway => return,
         };
         if let Err(e) = self.db.set_task_status(pending.task_id, prev_status) {
             self.set_status(format!("Reopen failed: {e}"));
@@ -929,6 +1001,7 @@ impl eframe::App for WorklogApp {
         // Keyboard shortcuts: Ctrl+1/2/3 switch tabs, Ctrl+N quick-capture,
         // Ctrl+T new task, Ctrl+F search, Ctrl+K find an open task.
         let mut had_input = false;
+        let typing = ctx.egui_wants_keyboard_input();
         ctx.input_mut(|i| {
             use egui::{Key, Modifiers};
             had_input = !i.events.is_empty() || i.pointer.is_moving();
@@ -940,6 +1013,18 @@ impl eframe::App for WorklogApp {
             }
             if i.consume_key(Modifiers::CTRL, Key::Num3) {
                 self.tab = Tab::Reports;
+            }
+            // bare 1–3 too, as long as no text field wants the keys
+            if !typing {
+                for (key, tab) in [
+                    (Key::Num1, Tab::Journal),
+                    (Key::Num2, Tab::Tasks),
+                    (Key::Num3, Tab::Reports),
+                ] {
+                    if i.consume_key(Modifiers::NONE, key) {
+                        self.tab = tab;
+                    }
+                }
             }
             if i.consume_key(Modifiers::CTRL, Key::N) {
                 self.tab = Tab::Journal;
@@ -965,104 +1050,16 @@ impl eframe::App for WorklogApp {
         // Guaranteed wake-ups so the idle poll runs even with no interaction.
         ctx.request_repaint_after(std::time::Duration::from_secs(15));
 
-        egui::Panel::top(egui::Id::new("tabs")).show(root, |ui_| {
-            ui_.add_space(4.0);
-            ui_.horizontal(|ui_| {
-                ui_.selectable_value(&mut self.tab, Tab::Journal, "  Journal  ");
-                ui_.selectable_value(&mut self.tab, Tab::Tasks, "  Tasks  ");
-                ui_.selectable_value(&mut self.tab, Tab::Reports, "  Reports  ");
-                ui_.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui_| {
-                    if ui_.button("?").on_hover_text("help").clicked() {
-                        self.show_help = true;
-                    }
-                    if ui_
-                        .button("🔍")
-                        .on_hover_text("search everything (Ctrl+F)")
-                        .clicked()
-                    {
-                        self.show_search = true;
-                        self.request_focus(ui::FOCUS_SEARCH);
-                    }
-                    if ui_.button("Projects…").clicked() {
-                        self.show_projects = true;
-                    }
-                    // The active task follows you across screens; click to
-                    // jump back to it after an interruption.
-                    if let Some(task) = self.active_task() {
-                        let mut title = task.title.clone();
-                        if title.chars().count() > 40 {
-                            title = title.chars().take(39).collect::<String>() + "…";
-                        }
-                        let chip = egui::RichText::new(format!(
-                            "⏵ {}  {}",
-                            task.project_code, title
-                        ))
-                        .color(ui_.visuals().selection.stroke.color);
-                        if ui_
-                            .button(chip)
-                            .on_hover_text(format!("Active task: {}", task.title))
-                            .clicked()
-                        {
-                            self.tab = Tab::Tasks;
-                        }
-                    }
-                });
-            });
-            ui_.add_space(4.0);
-        });
+        ui::shell::top_bar(self, root);
+        ui::shell::status_bar(self, root);
 
-        // Status bar: message for 5 s, plus the DB path for backup peace of mind.
-        egui::Panel::bottom(egui::Id::new("status")).show(root, |ui_| {
-            ui_.horizontal(|ui_| {
-                if let Some(warning) = &self.db_warning {
-                    ui_.label(
-                        egui::RichText::new(warning)
-                            .color(ui_.visuals().error_fg_color)
-                            .strong(),
-                    );
-                }
-                match &self.undo_delete {
-                    Some((item, at)) if at.elapsed().as_secs() < UNDO_WINDOW_SECS => {
-                        let label = match item {
-                            UndoItem::Merge { .. } => "↩ Undo merge",
-                            _ => "↩ Undo delete",
-                        };
-                        if ui_.button(label).clicked() {
-                            self.undo_delete_now();
-                        }
-                        ctx.request_repaint_after(std::time::Duration::from_millis(500));
-                    }
-                    Some(_) => self.undo_delete = None,
-                    None => {}
-                }
-                if let Some((text, at)) = &self.status {
-                    if at.elapsed().as_secs_f32() < 5.0 {
-                        ui_.label(egui::RichText::new(text).strong());
-                        ctx.request_repaint_after(std::time::Duration::from_millis(500));
-                    } else {
-                        self.status = None;
-                    }
-                }
-                ui_.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui_| {
-                    ui_.label(
-                        egui::RichText::new(self.db.path().display().to_string())
-                            .weak()
-                            .small(),
-                    );
-                    ui_.separator();
-                    // end-of-day sanity check: did I log what I worked on?
-                    let today_h = self.today_hours();
-                    let text = if today_h > 0.0 {
-                        format!("today: {} h", report::fmt_hours(today_h))
-                    } else {
-                        "today: nothing logged".to_string()
-                    };
-                    ui_.label(egui::RichText::new(text).weak());
-                });
-            });
-        });
-
-        egui::CentralPanel::default().show(root, |ui_| match self.tab {
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::new()
+                    .fill(ui::theme::BG)
+                    .inner_margin(egui::Margin::symmetric(ui::theme::PAGE_PAD, 18)),
+            )
+            .show(root, |ui_| match self.tab {
             Tab::Journal => ui::journal::show(self, ui_),
             Tab::Tasks => ui::tasks::show(self, ui_),
             Tab::Reports => ui::reports::show(self, ui_),
