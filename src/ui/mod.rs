@@ -60,7 +60,7 @@ pub fn enter_pressed(resp: &egui::Response, ui: &egui::Ui) -> bool {
 
 /// A project's palette entry.
 pub fn swatch_of(p: &crate::db::Project) -> theme::Swatch {
-    theme::swatch(None, p.id)
+    theme::swatch(p.color.as_deref(), p.id)
 }
 
 /// "● CODE" — dot in the base colour, code in mono 600, light colour.
@@ -360,7 +360,7 @@ pub fn entry_form_fields(
             ui,
             egui::TextEdit::singleline(&mut form.description)
                 .hint_text("What did you do?")
-                .desired_width(desc_w - 20.0),
+                .desired_width(desc_w),
         );
         if let Some(marker) = desc_focus_marker {
             app.apply_focus(marker, &desc_resp);

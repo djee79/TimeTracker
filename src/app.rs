@@ -173,8 +173,10 @@ pub enum UndoItem {
 /// How long the status-bar Undo stays available after a deletion.
 pub const UNDO_WINDOW_SECS: u64 = 10;
 
-/// No input for this long pauses running task timers (when enabled).
-pub const IDLE_PAUSE_SECS: u64 = 10 * 60;
+/// Default idle delay before running task timers pause (when enabled).
+pub const IDLE_PAUSE_MINS: u64 = 10;
+/// The choices offered in settings.
+pub const IDLE_PAUSE_CHOICES: [u64; 4] = [5, 10, 15, 30];
 
 /// Add/edit form state for the Projects window.
 #[derive(Default)]
@@ -183,6 +185,8 @@ pub struct ProjectForm {
     pub code: String,
     pub name: String,
     pub client: String,
+    /// Palette key.
+    pub color: String,
 }
 
 pub struct WorklogApp {
@@ -260,6 +264,8 @@ pub struct WorklogApp {
     pub settings_mirror_dir: String,
     pub settings_author: String,
     pub idle_pause: bool,
+    /// Minutes without input before timers pause. Persisted.
+    pub idle_pause_mins: u64,
     pub show_splash: bool,
 
     /// Splash artwork, loaded lazily for the Help window's about-footer.
@@ -424,6 +430,7 @@ impl WorklogApp {
             settings_mirror_dir: String::new(),
             settings_author: String::new(),
             idle_pause: true,
+            idle_pause_mins: IDLE_PAUSE_MINS,
             show_splash: boot.show_splash,
             splash: None,
             idle: crate::idle::IdleMonitor::new(),
@@ -455,6 +462,12 @@ impl WorklogApp {
         app.settings_mirror_dir = app.db.setting("backup_mirror_dir").unwrap_or_default();
         app.settings_author = app.db.setting("report_author").unwrap_or_default();
         app.idle_pause = app.db.setting("idle_pause").as_deref() != Some("0");
+        app.idle_pause_mins = app
+            .db
+            .setting("idle_pause_minutes")
+            .and_then(|v| v.parse().ok())
+            .filter(|m| IDLE_PAUSE_CHOICES.contains(m))
+            .unwrap_or(IDLE_PAUSE_MINS);
         if app.db.setting("task_sort").as_deref() == Some("manual") {
             app.task_sort = TaskSort::Manual;
         }
@@ -724,14 +737,15 @@ impl WorklogApp {
             return;
         };
         let idle_secs = idle_secs.min(self.last_app_activity.elapsed().as_secs());
-        if !self.idle_paused && idle_secs >= IDLE_PAUSE_SECS {
+        let limit = self.idle_pause_mins * 60;
+        if !self.idle_paused && idle_secs >= limit {
             // bank only up to the moment activity stopped
             let stop_at = chrono::Utc::now() - chrono::Duration::seconds(idle_secs as i64);
             let _ = self.db.stop_all_task_timers(stop_at);
             self.idle_paused = true;
             self.set_status("Task timers paused — machine idle");
             self.touch();
-        } else if self.idle_paused && idle_secs < IDLE_PAUSE_SECS {
+        } else if self.idle_paused && idle_secs < limit {
             let _ = self.db.restart_doing_timers(chrono::Utc::now());
             self.idle_paused = false;
             self.set_status("Task timers resumed");

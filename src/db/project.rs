@@ -31,6 +31,8 @@ pub struct Project {
     pub name: String,
     pub client: Option<String>,
     pub status: ProjectStatus,
+    /// Palette key (`ui::theme::PALETTE`); None falls back to an id pick.
+    pub color: Option<String>,
 }
 
 impl Project {
@@ -41,6 +43,7 @@ impl Project {
             name: row.get(2)?,
             client: row.get(3)?,
             status: ProjectStatus::parse(&row.get::<_, String>(4)?),
+            color: row.get(5)?,
         })
     }
 }
@@ -48,7 +51,7 @@ impl Project {
 impl Db {
     pub fn list_projects(&self) -> Result<Vec<Project>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, code, name, client, status FROM projects
+            "SELECT id, code, name, client, status, color FROM projects
              ORDER BY status = 'archived', code",
         )?;
         let rows = stmt.query_map([], Project::from_row)?;
@@ -114,5 +117,29 @@ impl Db {
             "UPDATE projects SET report_order =
                 (SELECT COUNT(*) FROM projects p2 WHERE p2.code < projects.code);",
         )
+    }
+
+    pub fn set_project_color(&self, id: i64, color: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE projects SET color = ?2 WHERE id = ?1",
+            rusqlite::params![id, color],
+        )?;
+        Ok(())
+    }
+
+    /// Hours per project in [from, to] inclusive ("X h this month").
+    pub fn hours_by_project(
+        &self,
+        from: chrono::NaiveDate,
+        to: chrono::NaiveDate,
+    ) -> Result<std::collections::HashMap<i64, f64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT project_id, SUM(hours) FROM log_entries
+             WHERE work_date >= ?1 AND work_date <= ?2 GROUP BY project_id",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![from.to_string(), to.to_string()], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?;
+        rows.collect()
     }
 }

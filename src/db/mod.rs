@@ -101,6 +101,13 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE projects ADD COLUMN report_order INTEGER;
      UPDATE projects SET report_order =
         (SELECT COUNT(*) FROM projects p2 WHERE p2.code < projects.code);",
+    // v9: project colour (a palette key, see ui::theme::PALETTE). Existing
+    // projects get distinct entries in creation order: blue, lime, orange…
+    "ALTER TABLE projects ADD COLUMN color TEXT;
+     UPDATE projects SET color = CASE
+        (SELECT COUNT(*) FROM projects p2 WHERE p2.id < projects.id) % 6
+        WHEN 0 THEN 'blue' WHEN 1 THEN 'lime' WHEN 2 THEN 'orange'
+        WHEN 3 THEN 'pink' WHEN 4 THEN 'teal' ELSE 'violet' END;",
 ];
 
 pub struct Db {
@@ -306,6 +313,28 @@ mod tests {
             .map(|id| db.list_projects().unwrap().into_iter().find(|p| p.id == *id).unwrap().code)
             .collect();
         assert_eq!(codes, ["AAA-1", "MMM-5", "ZZZ-9"]);
+        // colours back-filled in creation order
+        let colors: Vec<Option<String>> =
+            db.list_projects().unwrap().into_iter().map(|p| p.color).collect();
+        // list is ordered by code: AAA (id 2), MMM (id 3), ZZZ (id 1)
+        assert_eq!(
+            colors,
+            [Some("lime".into()), Some("orange".into()), Some("blue".into())]
+        );
+    }
+
+    #[test]
+    fn project_colour_and_month_hours() {
+        let db = Db::open_in_memory().unwrap();
+        let a = db.insert_project("AAA", "a", None).unwrap();
+        assert_eq!(db.list_projects().unwrap()[0].color, None);
+        db.set_project_color(a, "teal").unwrap();
+        assert_eq!(db.list_projects().unwrap()[0].color.as_deref(), Some("teal"));
+        db.insert_log_entry(d("2026-11-03"), a, "x", 1.5, false, None).unwrap();
+        db.insert_log_entry(d("2026-11-20"), a, "y", 2.0, false, None).unwrap();
+        db.insert_log_entry(d("2026-12-01"), a, "z", 4.0, false, None).unwrap();
+        let hours = db.hours_by_project(d("2026-11-01"), d("2026-11-30")).unwrap();
+        assert_eq!(hours.get(&a), Some(&3.5));
     }
 
     #[test]
