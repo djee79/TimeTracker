@@ -2,7 +2,7 @@ pub mod pdf;
 
 use chrono::{Datelike, NaiveDate};
 
-use crate::db::{Db, LogEntryRow};
+use crate::db::{Db, DayOff, LogEntryRow};
 
 /// One project's slice of a report: total hours plus every entry, in
 /// chronological order.
@@ -18,6 +18,8 @@ pub struct WeeklyReport {
     pub week_start: NaiveDate, // Monday
     pub groups: Vec<ProjectGroup>,
     pub total_hours: f64,
+    /// Days off in the week — listed in the copy text, no hours.
+    pub days_off: Vec<DayOff>,
 }
 
 /// Monday of the week containing `date`.
@@ -37,7 +39,8 @@ pub fn month_end_of(month_start: NaiveDate) -> NaiveDate {
 
 /// Format hours without trailing noise: 8, 1.5, 0.25.
 pub fn fmt_hours(h: f64) -> String {
-    let s = format!("{h:.2}");
+    // + 0.0 turns -0.0 (an empty f64 sum) into 0.0
+    let s = format!("{:.2}", h + 0.0);
     s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
@@ -77,10 +80,12 @@ pub fn weekly(db: &Db, week_start: NaiveDate) -> Result<WeeklyReport, rusqlite::
     let week_end = week_start + chrono::Duration::days(6);
     let rows = db.log_entries_in_range(week_start, week_end, false)?;
     let (groups, total_hours) = group_by_project(rows);
+    let days_off = db.days_off_between(week_start, week_end)?;
     Ok(WeeklyReport {
         week_start,
         groups,
         total_hours,
+        days_off,
     })
 }
 
@@ -95,7 +100,6 @@ impl WeeklyReport {
         );
         if self.groups.is_empty() {
             out.push_str("\n(no entries this week)\n");
-            return out;
         }
         for g in &self.groups {
             out.push_str(&format!(
@@ -110,6 +114,16 @@ impl WeeklyReport {
                     row.entry.work_date.format("%a %m-%d"),
                     fmt_hours(row.entry.hours),
                     row.entry.description
+                ));
+            }
+        }
+        if !self.days_off.is_empty() {
+            out.push_str("\nDays off\n");
+            for d in &self.days_off {
+                out.push_str(&format!(
+                    "  - {}: {}\n",
+                    d.date.format("%a %m-%d"),
+                    d.describe()
                 ));
             }
         }
@@ -439,6 +453,24 @@ mod tests {
     }
 
     #[test]
+    fn weekly_text_lists_days_off() {
+        let db = Db::open_in_memory().unwrap();
+        db.save_days_off(
+            &[d("2026-11-27")],
+            crate::db::DayOffKind::Vacation,
+            Some("long weekend"),
+            false,
+            "manual",
+            false,
+        )
+        .unwrap();
+        let rep = weekly(&db, d("2026-11-23")).unwrap();
+        let text = rep.to_text();
+        assert!(text.contains("(no entries this week)"));
+        assert!(text.contains("  - Fri 11-27: Vacation (long weekend)"), "{text}");
+    }
+
+    #[test]
     fn row_order_moves() {
         let order = [1, 2, 3, 4];
         assert_eq!(move_in_order(&order, 3, 1, true), vec![3, 1, 2, 4]);
@@ -476,6 +508,7 @@ mod tests {
 
     #[test]
     fn hours_format_trims() {
+        assert_eq!(fmt_hours(std::iter::empty::<f64>().sum()), "0");
         assert_eq!(fmt_hours(8.0), "8");
         assert_eq!(fmt_hours(1.5), "1.5");
         assert_eq!(fmt_hours(0.25), "0.25");

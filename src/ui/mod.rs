@@ -1,3 +1,4 @@
+pub mod calendar;
 pub mod help;
 pub mod journal;
 pub mod notes;

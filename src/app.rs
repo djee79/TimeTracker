@@ -14,6 +14,51 @@ pub enum Tab {
     Journal,
     Tasks,
     Reports,
+    Calendar,
+}
+
+/// The Calendar's "Mark day" form.
+#[derive(Clone)]
+pub struct DayOffForm {
+    pub kind: crate::db::DayOffKind,
+    pub label: String,
+    pub half: bool,
+    /// Range mode: every weekday from the selected day to `range_end`.
+    pub range: bool,
+    pub range_end: NaiveDate,
+    /// The selected day already has a day off (offer Delete).
+    pub existing: bool,
+}
+
+impl DayOffForm {
+    pub fn new(day: NaiveDate) -> DayOffForm {
+        DayOffForm {
+            kind: crate::db::DayOffKind::Vacation,
+            label: String::new(),
+            half: false,
+            range: false,
+            range_end: day,
+            existing: false,
+        }
+    }
+}
+
+/// The Québec-holidays import preview.
+pub struct QcImport {
+    pub year: i32,
+    pub easter: crate::holidays::EasterDay,
+    /// (date, name, checked)
+    pub rows: Vec<(NaiveDate, &'static str, bool)>,
+}
+
+/// One calendar month's data, loaded in a couple of queries.
+#[derive(Default)]
+pub struct CalData {
+    /// Hours per project for each day, in report order.
+    pub hours: std::collections::HashMap<NaiveDate, Vec<(i64, f64)>>,
+    pub days_off: std::collections::HashMap<NaiveDate, crate::db::DayOff>,
+    pub missing: Vec<NaiveDate>,
+    pub upcoming: Vec<crate::db::DayOff>,
 }
 
 /// How far back the journal list looks.
@@ -216,6 +261,8 @@ pub struct WorklogApp {
     pub filter_range: FilterRange,
     /// Live text search over the journal (description/project, any order).
     pub filter_text: String,
+    /// Journal narrowed to one day (double-click in the Calendar).
+    pub filter_day: Option<NaiveDate>,
     pub editing_entry: Option<(i64, EntryForm)>,
     /// Journal row picked for the notes panel.
     pub selected_entry_id: Option<i64>,
@@ -267,6 +314,14 @@ pub struct WorklogApp {
     pub report_year: i32,
     /// PDF exports include the linked task's notes under each entry. Persisted.
     pub pdf_include_notes: bool,
+
+    // Calendar
+    /// First of the month shown.
+    pub cal_month: NaiveDate,
+    pub cal_selected: Option<NaiveDate>,
+    pub cal_form: DayOffForm,
+    pub qc_import: Option<QcImport>,
+    cal_cache: Option<(NaiveDate, u64, std::rc::Rc<CalData>)>,
 
     // Global search (Ctrl+F)
     pub show_search: bool,
@@ -411,6 +466,7 @@ impl WorklogApp {
             filter_project: None,
             filter_range: FilterRange::Days30,
             filter_text: String::new(),
+            filter_day: None,
             editing_entry: None,
             selected_entry_id: None,
             entry_checklists: Default::default(),
@@ -439,6 +495,11 @@ impl WorklogApp {
             month_start: report::month_start_of(today),
             report_year: today.year(),
             pdf_include_notes: true,
+            cal_month: report::month_start_of(today),
+            cal_selected: None,
+            cal_form: DayOffForm::new(today),
+            qc_import: None,
+            cal_cache: None,
             show_search: false,
             search_query: String::new(),
             undo_delete: None,
@@ -549,9 +610,10 @@ impl WorklogApp {
     pub fn reload_entries(&mut self) {
         self.entries = self
             .db
-            .list_log_entries(
+            .list_log_entries_between(
                 self.filter_project,
-                self.filter_range.since(today()),
+                self.filter_day.or(self.filter_range.since(today())),
+                self.filter_day,
                 &self.filter_text,
             )
             .unwrap_or_default();
@@ -984,6 +1046,7 @@ impl WorklogApp {
                 week_start: self.week_start,
                 groups: Vec::new(),
                 total_hours: 0.0,
+                days_off: Vec::new(),
             });
             self.weekly_cache = Some((self.week_start, self.data_version, rep));
         }
@@ -999,8 +1062,20 @@ impl WorklogApp {
     /// day off.
     pub fn missing_in_week(&self, week_start: NaiveDate) -> Vec<NaiveDate> {
         let end = week_start + chrono::Duration::days(6);
-        let logged = self.db.daily_hours(week_start, end).unwrap_or_default();
-        report::missing_weekdays(week_start, end, &logged, &[], today())
+        self.missing_between(week_start, end)
+    }
+
+    /// Past weekdays in [from, to] with no hours and no day off.
+    pub fn missing_between(&self, from: NaiveDate, to: NaiveDate) -> Vec<NaiveDate> {
+        let logged = self.db.daily_hours(from, to).unwrap_or_default();
+        let off: Vec<NaiveDate> = self
+            .db
+            .days_off_between(from, to)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| d.date)
+            .collect();
+        report::missing_weekdays(from, to, &logged, &off, today())
     }
 
     /// Missing weekdays in the current week, cached for the status bar.
@@ -1034,6 +1109,43 @@ impl WorklogApp {
             self.reload_projects();
             self.touch();
         }
+    }
+
+    /// The calendar month's data (6 visible weeks), cached per data version.
+    pub fn calendar_data(&mut self) -> std::rc::Rc<CalData> {
+        if let Some((m, v, data)) = &self.cal_cache
+            && *m == self.cal_month
+            && *v == self.data_version
+        {
+            return data.clone();
+        }
+        let (from, to) = crate::ui::calendar::visible_range(self.cal_month);
+        let mut data = CalData::default();
+        for (d, pid, h) in self.db.hours_by_day_project(from, to).unwrap_or_default() {
+            data.hours.entry(d).or_default().push((pid, h));
+        }
+        for off in self.db.days_off_between(from, to).unwrap_or_default() {
+            data.days_off.insert(off.date, off);
+        }
+        data.missing = self.missing_between(from, to);
+        data.upcoming = self.db.upcoming_days_off(today(), 5).unwrap_or_default();
+        let data = std::rc::Rc::new(data);
+        self.cal_cache = Some((self.cal_month, self.data_version, data.clone()));
+        data
+    }
+
+    /// Calendar → Journal: show just that day's entries.
+    pub fn open_journal_day(&mut self, day: NaiveDate) {
+        self.filter_day = Some(day);
+        self.filter_text.clear();
+        self.tab = Tab::Journal;
+        self.reload_entries();
+    }
+
+    /// Calendar → Reports at the week containing `day`.
+    pub fn open_report_week(&mut self, day: NaiveDate) {
+        self.week_start = report::week_start_of(day);
+        self.tab = Tab::Reports;
     }
 
     /// Save-dialog + render for a built PDF document (or report the build
@@ -1101,7 +1213,7 @@ impl Drop for WorklogApp {
 impl eframe::App for WorklogApp {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
-        // Keyboard shortcuts: Ctrl+1/2/3 switch tabs, Ctrl+N quick-capture,
+        // Keyboard shortcuts: Ctrl+1–4 (or bare 1–4) switch tabs, Ctrl+N quick-capture,
         // Ctrl+T new task, Ctrl+F search, Ctrl+K find an open task.
         let mut had_input = false;
         let typing = ctx.egui_wants_keyboard_input();
@@ -1123,11 +1235,15 @@ impl eframe::App for WorklogApp {
                     (Key::Num1, Tab::Journal),
                     (Key::Num2, Tab::Tasks),
                     (Key::Num3, Tab::Reports),
+                    (Key::Num4, Tab::Calendar),
                 ] {
                     if i.consume_key(Modifiers::NONE, key) {
                         self.tab = tab;
                     }
                 }
+            }
+            if i.consume_key(Modifiers::CTRL, Key::Num4) {
+                self.tab = Tab::Calendar;
             }
             if i.consume_key(Modifiers::CTRL, Key::N) {
                 self.tab = Tab::Journal;
@@ -1166,11 +1282,13 @@ impl eframe::App for WorklogApp {
             Tab::Journal => ui::journal::show(self, ui_),
             Tab::Tasks => ui::tasks::show(self, ui_),
             Tab::Reports => ui::reports::show(self, ui_),
+            Tab::Calendar => ui::calendar::show(self, ui_),
         });
 
         ui::projects::show_window(self, &ctx);
         ui::notes_editor::details_window(self, &ctx);
         ui::search::show_window(self, &ctx);
+        ui::calendar::import_dialog(self, &ctx);
         ui::help::show_window(self, &ctx);
     }
 }

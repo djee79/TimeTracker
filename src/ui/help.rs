@@ -24,6 +24,7 @@ pub fn show_window(app: &mut WorklogApp, ctx: &egui::Context) {
                     section(ui_, "The “log the time?” strip", bridge);
                     section(ui_, "Completed tasks", completed);
                     section(ui_, "Reports & exports", reports);
+                    section(ui_, "Calendar & days off", calendar);
                     section(ui_, "Keyboard shortcuts", shortcuts);
                     section(ui_, "Your data & backups", data);
                     footer(app, ui_);
@@ -86,59 +87,55 @@ fn overview(ui_: &mut egui::Ui) {
          one entry at a time, and the reports add it all up. Everything lives in a \
          single local database file — no account, no network.",
     );
-    p(ui_, "The three screens work together:");
+    p(ui_, "The four screens work together:");
     b(ui_, "Journal — the record: one entry per slice of work (date, project, hours, description).");
     b(ui_, "Tasks — the plan: a to-do list that turns finished tasks into journal entries.");
     b(ui_, "Reports — the output: weekly summaries and the annual R&D export.");
+    b(ui_, "Calendar — the month at a glance: logged days, days off, and the weekdays still missing hours.");
 }
 
 fn projects(ui_: &mut egui::Ui) {
     p(
         ui_,
-        "Every entry and task belongs to a project. Manage them via the “Projects…” \
-         button in the top bar: a code (shown everywhere), a name, and an optional client.",
+        "Every entry and task belongs to a project. Manage them with the Projects button in \
+         the top bar: a code (shown everywhere), a name, an optional client and a colour.",
     );
-    b(ui_, "Archive a project you're done with — it disappears from the pickers but its history stays in reports.");
+    b(ui_, "The colour is used for the project's dots, chips, report cells and bars. New projects get the least-used colour; pick another from the six swatches.");
+    b(ui_, "Each row shows the hours logged this month. Archive a project you're done with — it disappears from the pickers but its history stays in reports.");
     b(ui_, "The project you used last is preselected for new entries and tasks.");
 }
 
 fn journal(ui_: &mut egui::Ui) {
     p(
         ui_,
-        "The capture strip at the top is the quickest way to log: pick a project and date, \
+        "The Log work card at the top is the quickest way to log: pick a project and date, \
          type the hours and what you did, press Enter.",
     );
     b(ui_, "Hours accept 1.5, 1,5 or 1:30 — up to 24 h per entry.");
-    b(ui_, "The “dev” checkbox marks the entry as R&D; only those go in the annual export.");
-    b(ui_, "Filter the list by project, time range, or the search box (every word must match the description or project code, in any order).");
-    b(ui_, "The “N entries, X h” counter follows the filters — search a topic to see its total hours.");
-    b(ui_, "✏ edits an entry in place (its creation stamp never changes); 🗑 asks once, then deletes — and the status bar offers Undo for 10 seconds, restoring the entry with its original stamp.");
-    b(ui_, "The status bar always shows “today: X h” — an end-of-day check that nothing was forgotten.");
-    b(ui_, "The “notes panel” checkbox shows the selected task's notes beside the journal — handy while writing up what you did.");
-    b(ui_, "Entries logged from a task remember it: click the entry's text to pull that task's notes into the panel.");
+    b(ui_, "The R&D switch flags the entry for the annual SR&ED export.");
+    b(ui_, "Filter the list by project, time range, or the search box (every word must match the description or project code, in any order). The “N entries · X h” counter follows the filters.");
+    b(ui_, "Days can be folded by clicking their header. The pencil edits an entry in place (its creation stamp never changes); the bin asks once, then deletes — and the status bar offers Undo for 10 seconds.");
+    b(ui_, "Click an entry to select it; with the Notes panel on, an entry logged from a task shows that task's notes and checklist beside the list. Tick checklist items or add new ones right there.");
+    b(ui_, "Entries from a task with a checklist show its progress, e.g. ✓ 2/2.");
+    b(ui_, "Double-clicking a day in the Calendar opens the journal on just that day; the date chip in the filter row goes back to the range.");
 }
 
 fn tasks(ui_: &mut egui::Ui) {
     p(
         ui_,
-        "Add a task with a project, a priority (click the –/⏶/⏷ symbol to cycle), and a title. \
+        "Add a task with a project, a priority (click the arrow / dash to cycle) and a title. \
          A task is either to-do, in progress, or done.",
     );
-    b(ui_, "⏵ start — marks it in progress and makes it the active task, shown as a chip in the top bar on every screen. Click the chip to jump back to it.");
-    b(ui_, "⏸ pause — back to to-do; ⏺ focus — make an in-progress task the active one again after an interruption.");
-    b(ui_, "⏱ log — log the time tracked so far without closing the task (see Time tracking).");
-    b(ui_, "The checkbox marks it done and opens the “log the time?” strip.");
-    b(ui_, "✏ (or double-clicking the title) edits the title in place — Enter saves, Esc cancels.");
-    b(ui_, "📄 opens the task's notes: freeform Markdown (**bold**, # headings, - lists, `code`…) with an Edit/Preview toggle. Closing the window saves.");
-    b(ui_, "The editor has a formatting toolbar — select text and click bold/italic/heading/list/etc. (Ctrl+B / Ctrl+I work too). Buttons toggle: click again to unformat.");
-    b(ui_, "Hover 📄 for a quick rendered peek; the “notes panel” checkbox keeps the clicked task's notes beside the list.");
-    b(ui_, "Notes with a markdown checklist (- [ ] / - [x]) show their progress on the row, e.g. 2/5 — green once complete.");
-    b(ui_, "🔎 find a task (or Ctrl+K) — the fast way through a long list. Type the letters you remember, in order, and they don't have to be next to each other: “wsp” finds “Website proposal”, “lgnbtn” finds “Fix the login button”.");
-    b(ui_, "The list narrows as you type, best match first — Enter on the top hit starts it and makes it the active task, so “Ctrl+K, few letters, Enter” resumes whatever you were on.");
-    b(ui_, "Several words all have to match, in any order, and the project code counts as one of them: “web login” finds the login task in the WEB project. Esc (or ✖) clears the box.");
-    b(ui_, "While the box has text the list is one flat ranked list — ordering and grouping come back when you clear it. Nothing open matches? The “Look in Completed instead” link retries the same search over finished tasks.");
-    b(ui_, "🔍 in the top bar (or Ctrl+F) searches journal, tasks and notes in one place — same fuzzy matching on task titles.");
-    b(ui_, "Order “auto” sorts itself: active, in progress, priority, newest. Order “manual” lets you drag the ☰ grip. “Group by project” splits the list per project.");
+    b(ui_, "Start — marks it in progress, starts its timer and makes it the active task, shown as a pill in the top bar on every screen. Click the pill's title to jump back to it.");
+    b(ui_, "Pause — back to to-do (timer stops). The crosshair makes an in-progress task the active one again after an interruption; the clock logs the time tracked so far without closing it.");
+    b(ui_, "The checkbox marks it done and opens the “log the time?” banner.");
+    b(ui_, "The pencil (or double-clicking the title) renames it in place — Enter saves, Esc cancels.");
+    b(ui_, "The notes icon opens the notes editor (hover it for a quick peek). It shows on rows that have notes, and on any row you hover.");
+    b(ui_, "Notes are Markdown. The editor has Edit / Split / Preview: Split shows the source with line numbers next to the rendered notes. The toolbar formats the selection (Ctrl+B, Ctrl+I), lights up for the line you're on, and Ctrl+Enter ticks the checkbox on the current line. Ctrl+S saves; ✕ saves and closes; Discard or Esc throw changes away (Esc asks first).");
+    b(ui_, "Checklists (- [ ] / - [x]) show their progress on the row; in the preview and the notes panel the boxes are clickable.");
+    b(ui_, "Find a task (Ctrl+K) — type the letters you remember, in order: “wsp” finds “Website proposal”. The list narrows as you type, best match first; Enter starts the top hit. Several words must all match, in any order, and the project code counts. Esc clears the box. Nothing open matches? “Look in Completed instead” retries over finished tasks.");
+    b(ui_, "The search icon in the top bar (or Ctrl+F) searches journal, tasks and notes in one place.");
+    b(ui_, "Order Auto sorts itself: active, in progress, priority, newest. Order Manual lets you drag the grip. “Group by project” splits the list per project.");
 }
 
 fn tracking(ui_: &mut egui::Ui) {
@@ -151,20 +148,22 @@ fn tracking(ui_: &mut egui::Ui) {
     b(ui_, "The counter means “tracked but not yet logged”: it resets each time you log the task's time, so it always shows what remains unaccounted for.");
     b(ui_, "Hover a task's title to see its tracked time so far.");
     b(ui_, "If the total includes an unbroken stretch of 5 h or more, the strip warns you — the timer was probably left running over lunch or overnight.");
-    b(ui_, "After 10 minutes without keyboard/mouse the timers pause, banking only up to when you stepped away; they resume on activity. Works on Windows, X11, and Wayland compositors with idle-notify (Hyprland, KDE, sway…); where unsupported it turns itself off. Toggle in Projects… → App settings.");
-    b(ui_, "For multi-day tasks, use ⏱ log at the end of each day so every slice lands on the right date.");
+    b(ui_, "The top-bar pill shows the active task's running time, with pause and stop & log (stop pauses the task and opens the “log the time?” banner).");
+    b(ui_, "After a while without keyboard/mouse (10 minutes by default; 5, 15 or 30 in Projects → App settings) the timers pause, banking only up to when you stepped away; they resume on activity. Works on Windows, X11, and Wayland compositors with idle-notify (Hyprland, KDE, sway…); where unsupported it turns itself off.");
+    b(ui_, "For multi-day tasks, log the time so far (the clock icon) at the end of each day so every slice lands on the right date.");
 }
 
 fn bridge(ui_: &mut egui::Ui) {
     p(
         ui_,
-        "Completing a task (or clicking ⏱ log) opens a prefilled strip above the list: \
-         project and description are filled in, the hours box is focused and empty.",
+        "Completing a task, stopping its timer from the top bar, or logging the time so far \
+         opens a prefilled banner above the list: project and description are filled in, \
+         the hours box is focused.",
     );
-    b(ui_, "The ⏱ hint shows the tracked time; click it to copy the value into the hours box — still yours to edit.");
+    b(ui_, "The sub-line shows the tracked time; “Use it” copies the value into the hours box — still yours to edit.");
     b(ui_, "Log it (or Enter) — writes the journal entry and resets the task's tracked counter.");
     b(ui_, "Skip (or Esc) — no entry; the tracked count is kept for later.");
-    b(ui_, "Cancel (completions only) — oops-undo: the task returns exactly as it was, including status, active chip and running timer.");
+    b(ui_, "✕ — oops-undo: the task returns exactly as it was, including status, active pill and running timer.");
 }
 
 fn completed(ui_: &mut egui::Ui) {
@@ -180,25 +179,39 @@ fn completed(ui_: &mut egui::Ui) {
 }
 
 fn reports(ui_: &mut egui::Ui) {
-    p(ui_, "Weekly summary — one week at a time, grouped by project with totals.");
-    b(ui_, "Click any cell to copy it; “Copy full week” and “Export CSV…” take the whole week.");
-    p(ui_, "Annual dev export (SR&ED) — every entry marked “dev” for a year, as CSV: date, project code, project name, description, hours.");
+    p(ui_, "Weekly summary — one week at a time: totals per project, an hours grid (projects × days) and a plain-text preview.");
+    b(ui_, "Click an hours cell to copy that day's text for that project; the daily total copies the whole day, a project code its whole week. Copy week, CSV and PDF take everything.");
+    b(ui_, "Rows follow your office timesheet: drag the grip or use ↑ / ↓ (they skip past projects with no hours that week). The order is saved and used by Copy, CSV and PDF, and by the monthly summary. Reset to A–Z puts it back.");
+    b(ui_, "Past weekdays with nothing logged and no day off turn amber, with a “N weekdays with no hours” warning; the status bar shows ⚠ N for the current week.");
+    b(ui_, "Days off from the Calendar are listed at the end of the copy text, e.g. “Fri 11-27: Vacation (long weekend)”.");
+    p(ui_, "Monthly summary — a whole month per project with share bars, plus copy, CSV and PDF.");
+    p(ui_, "Annual dev export (SR&ED) — every R&D entry for a year, as CSV: date, project code, project name, description, hours.");
     b(ui_, "Entries keep an immutable creation stamp, so the export doubles as contemporaneity evidence.");
-    p(ui_, "Monthly summary — a whole month grouped by project, with copy, CSV and PDF like the weekly.");
-    p(ui_, "All reports also export as PDF (US letter) — a print-ready layout grouped by project, with page numbers and a “Prepared by …” line (set your name in Projects… → App settings).");
-    b(ui_, "“PDF with task notes” includes each entry's task notes (rendered markdown) under it; a task logged several times has its notes printed once.");
+    p(ui_, "PDFs are US letter, grouped by project, with page numbers and a “Prepared by …” line (set your name in Projects → App settings). “Include task notes in PDF” prints each entry's task notes under it, once per task.");
+}
+
+fn calendar(ui_: &mut egui::Ui) {
+    p(ui_, "A month at a glance: hours per project on each day, days off, and the weekdays you forgot to log.");
+    b(ui_, "Click a day to mark it off — Holiday, Vacation, Sick or Other, an optional label, full or half day. Range… covers every weekday between two dates. Click a marked day to edit or delete it.");
+    b(ui_, "Double-click a day to open the journal on that date; click a week number to open that week in Reports.");
+    b(ui_, "Import Québec holidays fills in the statutory holidays for a year — choose Good Friday or Easter Monday, untick what doesn't apply. Days already marked are left alone; imported days stay editable.");
+    b(ui_, "Office closure… marks a range of weekdays as Other with a label.");
+    b(ui_, "Days off (even half days) clear the amber “no hours” warning and carry no hours.");
 }
 
 fn shortcuts(ui_: &mut egui::Ui) {
     egui::Grid::new("help/shortcuts").num_columns(2).spacing([24.0, 4.0]).show(ui_, |ui_| {
         for (keys, what) in [
-            ("Ctrl+1 / 2 / 3", "switch to Journal / Tasks / Reports"),
+            ("1 / 2 / 3 / 4", "switch to Journal / Tasks / Reports / Calendar (when not typing; Ctrl+1–4 work anywhere)"),
             ("Ctrl+N", "new journal entry (jumps to the capture strip)"),
             ("Ctrl+T", "new task (jumps to the task title)"),
             ("Ctrl+K", "find an open task (letters in order; Enter resumes the top hit)"),
             ("Ctrl+F", "search everything (journal, tasks, notes)"),
             ("Enter", "submits the form you're typing in"),
-            ("Esc", "dismisses the “log the time?” strip (first Esc leaves the text field)"),
+            ("Esc", "dismisses the “log the time?” banner (first Esc leaves the text field)"),
+            ("Ctrl+S", "save in the notes editor"),
+            ("Ctrl+B / Ctrl+I", "bold / italic in the notes editor"),
+            ("Ctrl+Enter", "tick the checkbox on the current line (notes editor)"),
         ] {
             ui_.label(egui::RichText::new(keys).monospace());
             ui_.label(what);
@@ -215,6 +228,6 @@ fn data(ui_: &mut egui::Ui) {
     );
     b(ui_, "The app also does it for you: on the first launch of each day it snapshots the database into the “backups” folder next to it, keeping the 10 most recent.");
     b(ui_, "To restore, close the app and copy a snapshot over worklog.db.");
-    b(ui_, "Set a backup mirror (Projects… → App settings) — a second folder, ideally on another disk or a NAS, that receives each daily snapshot too.");
+    b(ui_, "Set a backup mirror (Projects → App settings) — a second folder, ideally on another disk or a NAS, that receives each daily snapshot too.");
     b(ui_, "Maintenance is automatic: every launch runs a quick integrity check (a red warning appears in the status bar if it ever fails — restore a backup), the file is compacted monthly, and SQLite tunes itself up on exit. One database holds everything, for all years — at this app's scale SQLite is nowhere near its limits, and keeping history together is what makes search and the annual export work.");
 }

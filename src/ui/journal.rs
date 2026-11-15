@@ -18,6 +18,7 @@ pub fn show(app: &mut WorklogApp, ui_: &mut egui::Ui) {
         ui_,
         "journal/notes_panel",
         show_panel,
+        ui::notes::PANEL_WIDTH,
         |app, ui_| {
             let entry = app
                 .selected_entry_id
@@ -86,6 +87,23 @@ fn filter_row(app: &mut WorklogApp, ui_: &mut egui::Ui) {
         {
             app.reload_entries();
         }
+        if let Some(day) = app.filter_day {
+            let text = format!("{}  {}", day.format("%a, %b %-d"), icon::X);
+            if ui_
+                .add(
+                    egui::Button::new(w::rich(&text, t::font(13.0, Weight::Medium), t::ACCENT_TEXT))
+                        .fill(t::accent_tint())
+                        .stroke(egui::Stroke::new(1.0, t::alpha(t::ACCENT, 0.4)))
+                        .corner_radius(t::R_INPUT)
+                        .min_size(vec2(0.0, 30.0)),
+                )
+                .on_hover_text("Showing one day (from the calendar) — click to go back to the range")
+                .clicked()
+            {
+                app.filter_day = None;
+                app.reload_entries();
+            }
+        }
         let mut range = app.filter_range;
         egui::ComboBox::from_id_salt("journal/filter_range")
             .selected_text(capitalized(range.label()))
@@ -96,6 +114,7 @@ fn filter_row(app: &mut WorklogApp, ui_: &mut egui::Ui) {
             });
         if range != app.filter_range {
             app.filter_range = range;
+            app.filter_day = None;
             app.reload_entries();
         }
         if search_field(

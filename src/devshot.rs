@@ -40,6 +40,16 @@ pub fn tick(app: &mut WorklogApp, ctx: &egui::Context) {
             match view.as_str() {
                 "tasks" => app.tab = Tab::Tasks,
                 "reports" => app.tab = Tab::Reports,
+                "calendar" => app.tab = Tab::Calendar,
+                "calendar_sel" => {
+                    app.tab = Tab::Calendar;
+                    let day = crate::app::today() + chrono::Duration::days(12);
+                    crate::ui::calendar::select_day(app, day);
+                }
+                "qc" => {
+                    app.tab = Tab::Calendar;
+                    crate::ui::calendar::open_import(app);
+                }
                 "projects" => app.show_projects = true,
                 "help" => app.show_help = true,
                 "bridge" => {

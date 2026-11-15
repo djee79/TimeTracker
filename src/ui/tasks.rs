@@ -24,6 +24,7 @@ pub fn show(app: &mut WorklogApp, ui_: &mut egui::Ui) {
         ui_,
         "tasks/notes_panel",
         show_panel,
+        ui::notes::PANEL_WIDTH,
         |app, ui_| ui::notes::panel(app, ui_, None),
         |app, ui_| {
             egui::ScrollArea::vertical()

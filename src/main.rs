@@ -5,6 +5,7 @@ mod db;
 #[cfg(debug_assertions)]
 mod devshot;
 mod fuzzy;
+mod holidays;
 mod idle;
 mod report;
 mod ui;

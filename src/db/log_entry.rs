@@ -265,6 +265,18 @@ impl Db {
         since: Option<NaiveDate>,
         search: &str,
     ) -> Result<Vec<LogEntryRow>> {
+        self.list_log_entries_between(project_id, since, None, search)
+    }
+
+    /// Like `list_log_entries`, with an optional upper bound too (the
+    /// journal filtered to one day from the calendar).
+    pub fn list_log_entries_between(
+        &self,
+        project_id: Option<i64>,
+        since: Option<NaiveDate>,
+        until: Option<NaiveDate>,
+        search: &str,
+    ) -> Result<Vec<LogEntryRow>> {
         let mut sql = format!("{SELECT} WHERE 1=1");
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         if let Some(pid) = project_id {
@@ -274,6 +286,10 @@ impl Db {
         if let Some(d) = since {
             params.push(Box::new(d.to_string()));
             sql.push_str(&format!(" AND e.work_date >= ?{}", params.len()));
+        }
+        if let Some(d) = until {
+            params.push(Box::new(d.to_string()));
+            sql.push_str(&format!(" AND e.work_date <= ?{}", params.len()));
         }
         for term in search.split_whitespace() {
             let pattern = super::like_pattern(term);

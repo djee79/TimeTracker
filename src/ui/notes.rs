@@ -20,13 +20,14 @@ pub fn with_side_panel(
     ui: &mut egui::Ui,
     id: &str,
     show_panel: bool,
+    width: f32,
     side: impl FnOnce(&mut WorklogApp, &mut egui::Ui),
     main: impl FnOnce(&mut WorklogApp, &mut egui::Ui),
 ) {
     if show_panel {
         if ui.available_width() >= NARROW {
             egui::Panel::right(egui::Id::new(id))
-                .exact_size(PANEL_WIDTH + 20.0)
+                .exact_size(width + 20.0)
                 .resizable(false)
                 .show_separator_line(false)
                 .frame(Frame::new().inner_margin(Margin { left: 20, ..Default::default() }))

@@ -24,6 +24,7 @@ pub fn top_bar(app: &mut WorklogApp, root: &mut egui::Ui) {
                     Segment::new(Tab::Journal, "Journal").hint("1"),
                     Segment::new(Tab::Tasks, "Tasks").hint("2"),
                     Segment::new(Tab::Reports, "Reports").hint("3"),
+                    Segment::new(Tab::Calendar, "Calendar").hint("4"),
                 ];
                 w::segmented(ui, &mut app.tab, &tabs, t::CONTROL, 30.0);
 
