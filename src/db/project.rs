@@ -57,7 +57,8 @@ impl Db {
 
     pub fn insert_project(&self, code: &str, name: &str, client: Option<&str>) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO projects (code, name, client) VALUES (?1, ?2, ?3)",
+            "INSERT INTO projects (code, name, client, report_order)
+             VALUES (?1, ?2, ?3, (SELECT COALESCE(MAX(report_order), -1) + 1 FROM projects))",
             rusqlite::params![code, name, client],
         )?;
         Ok(self.conn.last_insert_rowid())
@@ -83,5 +84,35 @@ impl Db {
             rusqlite::params![id, status.as_str()],
         )?;
         Ok(())
+    }
+
+    /// Every project id in report order (then code) — archived ones too,
+    /// so they keep their slot.
+    pub fn project_order(&self) -> Result<Vec<i64>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM projects ORDER BY report_order IS NULL, report_order, code")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        rows.collect()
+    }
+
+    /// Rewrite the report order from `ids` (first = top), in one transaction.
+    pub fn save_project_order(&self, ids: &[i64]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        for (i, id) in ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE projects SET report_order = ?2 WHERE id = ?1",
+                rusqlite::params![id, i as i64],
+            )?;
+        }
+        tx.commit()
+    }
+
+    /// Back to alphabetical by code.
+    pub fn reset_project_order(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "UPDATE projects SET report_order =
+                (SELECT COUNT(*) FROM projects p2 WHERE p2.code < projects.code);",
+        )
     }
 }

@@ -290,6 +290,8 @@ pub struct WorklogApp {
     today_hours: Option<(NaiveDate, u64, f64)>,
     /// Hours logged this week (Mon–Sun), same caching as `today_hours`.
     week_hours: Option<(NaiveDate, u64, f64)>,
+    /// Missing weekdays this week, same caching.
+    week_missing: Option<(NaiveDate, u64, usize)>,
     pub status: Option<(String, Instant)>,
     focus_id: Option<egui::Id>,
 }
@@ -436,6 +438,7 @@ impl WorklogApp {
             data_version: 0,
             today_hours: None,
             week_hours: None,
+            week_missing: None,
             status: None,
             focus_id: None,
         };
@@ -951,6 +954,52 @@ impl WorklogApp {
             self.weekly_cache = Some((self.week_start, self.data_version, rep));
         }
         &self.weekly_cache.as_ref().unwrap().2
+    }
+
+    /// The weekly report as paste-ready text (preview, Copy week).
+    pub fn weekly_text(&mut self) -> String {
+        self.weekly_report().to_text()
+    }
+
+    /// Past weekdays of the week starting `week_start` with no hours and no
+    /// day off.
+    pub fn missing_in_week(&self, week_start: NaiveDate) -> Vec<NaiveDate> {
+        let end = week_start + chrono::Duration::days(6);
+        let logged = self.db.daily_hours(week_start, end).unwrap_or_default();
+        report::missing_weekdays(week_start, end, &logged, &[], today())
+    }
+
+    /// Missing weekdays in the current week, cached for the status bar.
+    pub fn missing_this_week(&mut self) -> usize {
+        let today = today();
+        match self.week_missing {
+            Some((d, v, n)) if d == today && v == self.data_version => n,
+            _ => {
+                let n = self.missing_in_week(report::week_start_of(today)).len();
+                self.week_missing = Some((today, self.data_version, n));
+                n
+            }
+        }
+    }
+
+    /// Move a weekly-report row next to another (above when `before`) in
+    /// the global project order and save it.
+    pub fn move_report_row(&mut self, src: i64, target: i64, before: bool) {
+        let order = match self.db.project_order() {
+            Ok(o) => o,
+            Err(e) => {
+                self.set_status(format!("Reorder failed: {e}"));
+                return;
+            }
+        };
+        let new = report::move_in_order(&order, src, target, before);
+        if new != order {
+            if let Err(e) = self.db.save_project_order(&new) {
+                self.set_status(format!("Reorder failed: {e}"));
+            }
+            self.reload_projects();
+            self.touch();
+        }
     }
 
     /// Save-dialog + render for a built PDF document (or report the build

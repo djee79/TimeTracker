@@ -96,6 +96,11 @@ const MIGRATIONS: &[&str] = &[
     // v7: the task a log entry came from (bridge-created entries only).
     // Plain INTEGER, no FK: deleting a task must not orphan-block its entries.
     "ALTER TABLE log_entries ADD COLUMN task_id INTEGER;",
+    // v8: weekly-report row order (match the office timesheet). Back-filled
+    // with the alphabetical order the reports used until now.
+    "ALTER TABLE projects ADD COLUMN report_order INTEGER;
+     UPDATE projects SET report_order =
+        (SELECT COUNT(*) FROM projects p2 WHERE p2.code < projects.code);",
 ];
 
 pub struct Db {
@@ -262,6 +267,62 @@ mod tests {
             .unwrap();
         assert_eq!(v as usize, MIGRATIONS.len());
         db.migrate().unwrap(); // idempotent
+    }
+
+    /// A database at `version` (older schema) with three projects in it.
+    fn legacy_db(version: usize) -> Db {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..version] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", version as i64).unwrap();
+        for code in ["ZZZ-9", "AAA-1", "MMM-5"] {
+            conn.execute(
+                "INSERT INTO projects (code, name) VALUES (?1, 'n')",
+                [code],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO log_entries (work_date, project_id, description, hours, created_at)
+             VALUES ('2026-11-02', 1, 'kept', 2.5, '2026-11-02T10:00:00Z')",
+            [],
+        )
+        .unwrap();
+        Db { conn, path: PathBuf::new() }
+    }
+
+    #[test]
+    fn v7_database_upgrades_cleanly() {
+        let db = legacy_db(7);
+        db.migrate().unwrap();
+        // existing data untouched
+        assert_eq!(db.hours_on(d("2026-11-02")).unwrap(), 2.5);
+        // report order back-filled alphabetically by code
+        let codes: Vec<String> = db
+            .project_order()
+            .unwrap()
+            .iter()
+            .map(|id| db.list_projects().unwrap().into_iter().find(|p| p.id == *id).unwrap().code)
+            .collect();
+        assert_eq!(codes, ["AAA-1", "MMM-5", "ZZZ-9"]);
+    }
+
+    #[test]
+    fn project_report_order_saves_and_resets() {
+        let db = Db::open_in_memory().unwrap();
+        let b = db.insert_project("BBB", "b", None).unwrap();
+        let a = db.insert_project("AAA", "a", None).unwrap();
+        // new projects append at the end
+        assert_eq!(db.project_order().unwrap(), vec![b, a]);
+        let c = db.insert_project("CCC", "c", None).unwrap();
+        db.save_project_order(&[c, b, a]).unwrap();
+        assert_eq!(db.project_order().unwrap(), vec![c, b, a]);
+        // archived projects keep their slot
+        db.set_project_status(b, ProjectStatus::Archived).unwrap();
+        assert_eq!(db.project_order().unwrap(), vec![c, b, a]);
+        db.reset_project_order().unwrap();
+        assert_eq!(db.project_order().unwrap(), vec![a, b, c]);
     }
 
     #[test]

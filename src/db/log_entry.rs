@@ -321,7 +321,8 @@ impl Db {
     }
 
     /// All entries in [from, to] inclusive, ordered by project then date —
-    /// the shape both reports want.
+    /// the shape the reports want. Weekly/monthly (`dev_only` = false) follow
+    /// the saved report order; the annual R&D export stays alphabetical.
     pub fn log_entries_in_range(
         &self,
         from: NaiveDate,
@@ -334,7 +335,11 @@ impl Db {
         if dev_only {
             sql.push_str(" AND e.is_dev = 1");
         }
-        sql.push_str(" ORDER BY p.code, e.work_date, e.id");
+        if dev_only {
+            sql.push_str(" ORDER BY p.code, e.work_date, e.id");
+        } else {
+            sql.push_str(" ORDER BY p.report_order IS NULL, p.report_order, p.code, e.work_date, e.id");
+        }
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(
             rusqlite::params![from.to_string(), to.to_string()],

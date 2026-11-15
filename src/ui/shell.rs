@@ -154,8 +154,18 @@ pub fn status_bar(app: &mut WorklogApp, root: &mut egui::Ui) {
                     }
                     let today_h = app.today_hours();
                     let week_h = app.week_hours();
+                    let missing = app.missing_this_week();
                     stat(ui, "Today", today_h);
-                    stat(ui, "This week", week_h);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        if missing > 0 {
+                            w::icon_label(ui, &format!("{} {missing}", icon::WARNING), 12.0, t::AMBER)
+                                .on_hover_text(format!(
+                                    "{missing} weekday(s) this week with no hours logged"
+                                ));
+                        }
+                        stat(ui, "This week", week_h);
+                    });
                     match &app.undo_delete {
                         Some((item, at)) if at.elapsed().as_secs() < UNDO_WINDOW_SECS => {
                             let label = match item {
