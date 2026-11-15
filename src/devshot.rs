@@ -42,6 +42,11 @@ pub fn tick(app: &mut WorklogApp, ctx: &egui::Context) {
                 "reports" => app.tab = Tab::Reports,
                 "projects" => app.show_projects = true,
                 "help" => app.show_help = true,
+                "bridge" => {
+                    if let Some(t) = app.active_task().cloned() {
+                        app.stop_and_log(&t);
+                    }
+                }
                 "notes" => {
                     app.tab = Tab::Tasks;
                     if let Some(t) = app.open_tasks.first().cloned() {

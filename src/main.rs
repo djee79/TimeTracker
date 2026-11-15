@@ -151,7 +151,11 @@ impl eframe::App for Boot {
 fn initial_size() -> [f32; 2] {
     #[cfg(debug_assertions)]
     if devshot::active() {
-        return [1360.0, 900.0];
+        let w = std::env::var("WORKLOG_SHOT_W")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1360.0);
+        return [w, 900.0];
     }
     [1000.0, 700.0]
 }

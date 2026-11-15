@@ -34,11 +34,6 @@ pub struct Project {
 }
 
 impl Project {
-    /// "CODE — Name", the standard way a project is shown in pickers.
-    pub fn label(&self) -> String {
-        format!("{} — {}", self.code, self.name)
-    }
-
     fn from_row(row: &Row) -> rusqlite::Result<Project> {
         Ok(Project {
             id: row.get(0)?,

@@ -198,6 +198,11 @@ pub struct WorklogApp {
     /// Live text search over the journal (description/project, any order).
     pub filter_text: String,
     pub editing_entry: Option<(i64, EntryForm)>,
+    /// Journal row picked for the notes panel.
+    pub selected_entry_id: Option<i64>,
+    /// (done, total) checklist counts of the tasks behind journal entries,
+    /// keyed by task id — refreshed with the entries.
+    pub entry_checklists: std::collections::HashMap<i64, (usize, usize)>,
     pub confirm_delete_entry: Option<i64>,
 
     // Tasks
@@ -384,6 +389,8 @@ impl WorklogApp {
             filter_range: FilterRange::Days30,
             filter_text: String::new(),
             editing_entry: None,
+            selected_entry_id: None,
+            entry_checklists: Default::default(),
             confirm_delete_entry: None,
             new_task_title: String::new(),
             new_task_project: None,
@@ -498,7 +505,10 @@ impl WorklogApp {
 
     /// A project's palette colours (dots, chips, bars, coloured codes).
     pub fn project_swatch(&self, id: i64) -> ui::theme::Swatch {
-        ui::theme::swatch(None, id)
+        match self.project(id) {
+            Some(p) => ui::swatch_of(p),
+            None => ui::theme::swatch(None, id),
+        }
     }
 
     pub fn reload_projects(&mut self) {
@@ -514,6 +524,16 @@ impl WorklogApp {
                 &self.filter_text,
             )
             .unwrap_or_default();
+        let mut task_ids: Vec<i64> = self.entries.iter().filter_map(|r| r.entry.task_id).collect();
+        task_ids.sort_unstable();
+        task_ids.dedup();
+        self.entry_checklists = task_ids
+            .into_iter()
+            .filter_map(|id| {
+                let task = self.db.task(id).ok().flatten()?;
+                Some((id, task.checklist()?))
+            })
+            .collect();
     }
 
     /// Hours logged today (all projects, ignores the journal filters).
@@ -553,10 +573,10 @@ impl WorklogApp {
         // In auto mode the active task jumps to the very top (stable sort
         // keeps the doing → priority → recency order for everything else).
         // Manual order is the user's — never rearrange it.
-        if self.task_sort == TaskSort::Auto {
-            if let Some(id) = self.active_task_id {
-                self.open_tasks.sort_by_key(|t| t.id != id);
-            }
+        if self.task_sort == TaskSort::Auto
+            && let Some(id) = self.active_task_id
+        {
+            self.open_tasks.sort_by_key(|t| t.id != id);
         }
         self.done_tasks = self
             .db

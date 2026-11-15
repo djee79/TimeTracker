@@ -1,5 +1,6 @@
 pub mod help;
 pub mod journal;
+pub mod notes;
 pub mod projects;
 pub mod reports;
 pub mod search;
@@ -57,9 +58,47 @@ pub fn enter_pressed(resp: &egui::Response, ui: &egui::Ui) -> bool {
     resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
 }
 
-/// A project's base colour (dots, fills, bars).
-pub fn project_color(_ui: &egui::Ui, project_id: i64) -> egui::Color32 {
-    theme::swatch(None, project_id).base
+/// A project's palette entry.
+pub fn swatch_of(p: &crate::db::Project) -> theme::Swatch {
+    theme::swatch(None, p.id)
+}
+
+/// "● CODE" — dot in the base colour, code in mono 600, light colour.
+pub fn project_job(code: &str, sw: theme::Swatch, size: f32) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        "● ",
+        0.0,
+        egui::TextFormat {
+            font_id: theme::font(size - 2.0, theme::Weight::Regular),
+            color: sw.base,
+            valign: egui::Align::Center,
+            ..Default::default()
+        },
+    );
+    job.append(
+        code,
+        0.0,
+        egui::TextFormat {
+            font_id: theme::mono_semi(size),
+            color: sw.light,
+            valign: egui::Align::Center,
+            ..Default::default()
+        },
+    );
+    job
+}
+
+/// Scope tweak for form fields: dropdowns and the date button get the
+/// input look (`INSET` fill, `BORDER_STRONG` stroke, 36 px tall).
+pub fn field_style(ui: &mut egui::Ui) {
+    let w = &mut ui.visuals_mut().widgets;
+    w.inactive.weak_bg_fill = theme::INSET;
+    w.inactive.bg_stroke = egui::Stroke::new(1.0, theme::BORDER_STRONG);
+    w.hovered.weak_bg_fill = theme::INSET;
+    w.open.weak_bg_fill = theme::INSET;
+    w.open.bg_stroke = egui::Stroke::new(1.0, theme::ACCENT);
+    ui.spacing_mut().button_padding = egui::vec2(12.0, 9.0);
 }
 
 /// Case-insensitive "every word matches somewhere" test against a project's
@@ -86,15 +125,18 @@ fn project_picker(
     active_only: bool,
 ) -> bool {
     let mut changed = false;
-    let text = selected
-        .and_then(|id| app_projects.iter().find(|p| p.id == id))
-        .map(|p| p.code.clone())
-        .unwrap_or_else(|| all_option.unwrap_or("project…").into());
+    let text: egui::WidgetText = match selected.and_then(|id| app_projects.iter().find(|p| p.id == id)) {
+        Some(p) => project_job(&p.code, swatch_of(p), 13.0).into(),
+        None => egui::RichText::new(all_option.unwrap_or("Project…"))
+            .color(theme::TEXT_2)
+            .into(),
+    };
     let filter_id = egui::Id::new((id_salt, "picker_filter"));
     let open_id = egui::Id::new((id_salt, "picker_open"));
     let was_open: bool = ui.ctx().data(|d| d.get_temp(open_id)).unwrap_or(false);
     let inner = egui::ComboBox::from_id_salt(id_salt)
         .selected_text(text)
+        .width(150.0)
         .height(380.0)
         .show_ui(ui, |ui| {
             let mut filter: String =
@@ -123,7 +165,17 @@ fn project_picker(
                     && project_matches(p, &filter)
             }) {
                 first_match.get_or_insert(p.id);
-                let label = egui::RichText::new(p.label()).color(project_color(ui, p.id));
+                let mut label = project_job(&p.code, swatch_of(p), 13.0);
+                label.append(
+                    &format!("  {}", p.name),
+                    0.0,
+                    egui::TextFormat {
+                        font_id: theme::font(13.0, theme::Weight::Regular),
+                        color: theme::MUTED,
+                        valign: egui::Align::Center,
+                        ..Default::default()
+                    },
+                );
                 if ui.selectable_value(selected, Some(p.id), label).clicked() {
                     changed = true;
                 }
@@ -163,18 +215,34 @@ pub fn project_filter_combo(
     app_projects: &[crate::db::Project],
     selected: &mut Option<i64>,
 ) -> bool {
-    project_picker(ui, id_salt, app_projects, selected, Some("all projects"), false)
+    project_picker(ui, id_salt, app_projects, selected, Some("All projects"), false)
 }
 
-/// Calendar-popup date button (egui_extras uses jiff dates; we live in chrono).
+/// Calendar-popup date button (egui_extras uses jiff dates; we live in
+/// chrono). Reads "Today, Nov 15" for today, with a calendar icon.
 pub fn date_picker(ui: &mut egui::Ui, id_salt: &str, date: &mut NaiveDate) -> bool {
     let mut jd = jiff::civil::Date::new(date.year() as i16, date.month() as i8, date.day() as i8)
         .unwrap_or_default();
-    ui.add(
+    let format = if *date == crate::app::today() {
+        "      Today, %b %-d"
+    } else if date.year() == crate::app::today().year() {
+        "      %a, %b %-d"
+    } else {
+        "      %b %-d, %Y"
+    };
+    let resp = ui.add(
         egui_extras::DatePickerButton::new(&mut jd)
             .id_salt(id_salt)
-            .show_icon(true)
+            .show_icon(false)
+            .format(format)
             .calendar_week(true),
+    );
+    ui.painter().text(
+        egui::pos2(resp.rect.left() + 13.0, resp.rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        widgets::icon::CALENDAR_BLANK,
+        theme::icon_font(15.0),
+        theme::MUTED,
     );
     let new = NaiveDate::from_ymd_opt(jd.year() as i32, jd.month() as u32, jd.day() as u32)
         .unwrap_or(*date);
@@ -191,11 +259,6 @@ pub fn dev_checkbox(ui: &mut egui::Ui, is_dev: &mut bool) {
         "R&D",
         "Flags this entry for the annual SR&ED / R&D export",
     );
-}
-
-/// Amber "R&D" badge on list rows.
-pub fn dev_badge(ui: &mut egui::Ui) {
-    widgets::rd_badge(ui);
 }
 
 /// Two-step inline delete: first click arms it, second confirms.
@@ -229,8 +292,12 @@ pub fn confirm_delete_button(ui: &mut egui::Ui, armed: &mut Option<i64>, id: i64
     }
 }
 
-/// Shared row of entry-form fields (project, date, hours, dev, description).
+/// Shared entry-form fields (project, date, hours, description, R&D),
+/// laid out inline — call inside a `horizontal_wrapped`. With `labels`
+/// every field gets a 12 px label above it. `reserve` is the width left
+/// for whatever the caller puts after the description (buttons).
 /// Returns true if Enter was hit in the description or hours field.
+#[allow(clippy::too_many_arguments)]
 pub fn entry_form_fields(
     app: &mut WorklogApp,
     ui: &mut egui::Ui,
@@ -238,17 +305,35 @@ pub fn entry_form_fields(
     id_salt: &str,
     desc_focus_marker: Option<&'static str>,
     hours_focus_marker: Option<&'static str>,
+    labels: bool,
+    reserve: f32,
 ) -> bool {
     let mut submit = false;
     let projects = app.projects.clone();
-    ui.horizontal(|ui| {
-        project_combo(ui, &format!("{id_salt}/proj"), &projects, &mut form.project_id);
-        date_picker(ui, &format!("{id_salt}/date"), &mut form.work_date);
-
-        let hours_resp = ui.add(
+    let field = |ui: &mut egui::Ui, label: &str, add: &mut dyn FnMut(&mut egui::Ui)| {
+        if labels {
+            widgets::labeled(ui, label, |ui| add(ui));
+        } else {
+            add(ui);
+        }
+    };
+    ui.scope(|ui| {
+        field_style(ui);
+        field(ui, "Project", &mut |ui| {
+            project_combo(ui, &format!("{id_salt}/proj"), &projects, &mut form.project_id);
+        });
+        field(ui, "Date", &mut |ui| {
+            date_picker(ui, &format!("{id_salt}/date"), &mut form.work_date);
+        });
+    });
+    field(ui, "Hours", &mut |ui| {
+        let hours_resp = widgets::input(
+            ui,
             egui::TextEdit::singleline(&mut form.hours_text)
-                .hint_text("hrs")
-                .desired_width(44.0),
+                .hint_text("0.0")
+                .font(theme::mono(14.0))
+                .horizontal_align(egui::Align::RIGHT)
+                .desired_width(60.0),
         );
         if let Some(marker) = hours_focus_marker {
             app.apply_focus(marker, &hours_resp);
@@ -257,22 +342,33 @@ pub fn entry_form_fields(
             submit = true;
         }
         if !form.hours_text.trim().is_empty() && form.parse_hours().is_none() {
-            ui.label(egui::RichText::new("?").color(ui.visuals().error_fg_color))
-                .on_hover_text("Hours must be a number like 1.5 or 1:30, up to 24");
+            ui.painter().rect_stroke(
+                hours_resp.rect,
+                theme::R_INPUT,
+                egui::Stroke::new(1.0, theme::DANGER),
+                egui::StrokeKind::Inside,
+            );
+            hours_resp.on_hover_text("Hours must be a number like 1.5 or 1:30, up to 24");
         }
-
-        dev_checkbox(ui, &mut form.is_dev);
     });
-    let desc_resp = ui.add(
-        egui::TextEdit::singleline(&mut form.description)
-            .hint_text("what did you do?")
-            .desired_width(f32::INFINITY),
-    );
-    if let Some(marker) = desc_focus_marker {
-        app.apply_focus(marker, &desc_resp);
-    }
-    if enter_pressed(&desc_resp, ui) {
-        submit = true;
-    }
+    // in a wrapping row available_width() is the whole row; measure what's
+    // left on this line from the cursor instead
+    let left_on_line = ui.max_rect().right() - ui.cursor().min.x;
+    let desc_w = (left_on_line - reserve).max(240.0);
+    field(ui, "What did you do?", &mut |ui| {
+        let desc_resp = widgets::input(
+            ui,
+            egui::TextEdit::singleline(&mut form.description)
+                .hint_text("What did you do?")
+                .desired_width(desc_w - 20.0),
+        );
+        if let Some(marker) = desc_focus_marker {
+            app.apply_focus(marker, &desc_resp);
+        }
+        if enter_pressed(&desc_resp, ui) {
+            submit = true;
+        }
+    });
+    field(ui, " ", &mut |ui| dev_checkbox(ui, &mut form.is_dev));
     submit
 }

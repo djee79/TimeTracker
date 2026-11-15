@@ -101,13 +101,14 @@ pub fn eyebrow(ui: &mut Ui, text: &str) -> Response {
 
 /// A keyboard hint chip: `Enter`, `Ctrl K`.
 pub fn kbd(ui: &mut Ui, text: &str) -> Response {
-    Frame::new()
-        .fill(t::CONTROL)
-        .stroke(Stroke::new(1.0, t::BORDER_STRONG))
-        .corner_radius(5)
-        .inner_margin(Margin::symmetric(5, 1))
-        .show(ui, |ui| ui.label(mono(text, 11.0).color(t::MUTED)))
-        .response
+    pill_job(
+        ui,
+        mono(text, 11.0).color(t::TEXT_2),
+        Color32::TRANSPARENT,
+        t::SWITCH_OFF,
+        5,
+        vec2(6.0, 1.5),
+    )
 }
 
 // ---- buttons ----
@@ -371,13 +372,37 @@ pub fn pill(
     stroke: Color32,
     radius: u8,
 ) -> Response {
-    Frame::new()
-        .fill(fill)
-        .stroke(Stroke::new(1.0, stroke))
-        .corner_radius(radius)
-        .inner_margin(Margin::symmetric(7, 2))
-        .show(ui, |ui| ui.label(text))
-        .response
+    let job = egui::WidgetText::from(text);
+    pill_job(ui, job, fill, stroke, radius, vec2(7.0, 2.0))
+}
+
+/// Paints a badge at exactly its text size (a Frame would stretch to the
+/// row height inside right-to-left layouts).
+pub fn pill_job(
+    ui: &mut Ui,
+    text: impl Into<egui::WidgetText>,
+    fill: Color32,
+    stroke: Color32,
+    radius: u8,
+    pad: Vec2,
+) -> Response {
+    let galley = text.into().into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        egui::TextStyle::Body,
+    );
+    let size = galley.size() + 2.0 * pad;
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
+    if ui.is_rect_visible(rect) {
+        ui.painter().rect_filled(rect, radius, fill);
+        if stroke != Color32::TRANSPARENT {
+            ui.painter()
+                .rect_stroke(rect, radius, Stroke::new(1.0, stroke), StrokeKind::Inside);
+        }
+        ui.painter().galley(rect.min + pad, galley, t::TEXT);
+    }
+    resp
 }
 
 pub fn rd_badge(ui: &mut Ui) -> Response {
@@ -403,12 +428,7 @@ pub fn client_tag(ui: &mut Ui, client: &str) -> Response {
             ..Default::default()
         },
     );
-    Frame::new()
-        .stroke(Stroke::new(1.0, t::SWITCH_OFF))
-        .corner_radius(5)
-        .inner_margin(Margin::symmetric(6, 1))
-        .show(ui, |ui| ui.label(job))
-        .response
+    pill_job(ui, job, Color32::TRANSPARENT, t::SWITCH_OFF, 5, vec2(6.0, 1.5))
 }
 
 pub fn count_pill(ui: &mut Ui, n: usize) -> Response {
@@ -434,19 +454,14 @@ pub fn today_badge(ui: &mut Ui) -> Response {
 }
 
 pub fn warn_pill(ui: &mut Ui, text: &str) -> Response {
-    Frame::new()
-        .fill(t::alpha(t::AMBER, 0.10))
-        .stroke(Stroke::new(1.0, t::alpha(t::AMBER, 0.32)))
-        .corner_radius(t::R_PILL)
-        .inner_margin(Margin::symmetric(9, 2))
-        .show(ui, |ui| {
-            ui.label(rich(
-                &format!("{} {text}", icon::WARNING),
-                t::font(12.0, Weight::Medium),
-                t::AMBER,
-            ))
-        })
-        .response
+    pill_job(
+        ui,
+        rich(&format!("{} {text}", icon::WARNING), t::font(12.0, Weight::Medium), t::AMBER),
+        t::alpha(t::AMBER, 0.10),
+        t::alpha(t::AMBER, 0.32),
+        t::R_PILL,
+        vec2(9.0, 2.0),
+    )
 }
 
 // ---- containers ----
@@ -485,6 +500,8 @@ pub fn list_row<R>(
 ) -> (R, Response) {
     let width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    // registered before the contents, so the row's own buttons win clicks
+    let resp = ui.interact(rect, ui.id().with(id), Sense::click());
     let bg = ui.painter().add(Shape::Noop);
     let inner = ui.scope_builder(
         UiBuilder::new()
@@ -492,7 +509,6 @@ pub fn list_row<R>(
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
         add,
     );
-    let resp = ui.interact(rect, ui.id().with(id), Sense::click());
     let hovered = ui.rect_contains_pointer(rect);
     if selected {
         ui.painter()
@@ -503,6 +519,36 @@ pub fn list_row<R>(
         ui.painter().set(bg, Shape::rect_filled(rect, 0, t::HOVER));
     }
     (inner.inner, resp)
+}
+
+/// A clickable section header with a chevron; the open/closed state lives
+/// in egui memory under `id`. Returns whether the section is open.
+pub fn collapsible_header(
+    ui: &mut Ui,
+    id: egui::Id,
+    default_open: bool,
+    force_open: bool,
+    add: impl FnOnce(&mut Ui),
+) -> bool {
+    let mut open: bool = ui.ctx().data(|d| d.get_temp(id)).unwrap_or(default_open);
+    if force_open {
+        open = true;
+    }
+    let inner = ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+        let glyph = if open { icon::CARET_DOWN } else { icon::CARET_RIGHT };
+        ui.label(RichText::new(glyph).font(t::icon_font(14.0)).color(t::FAINT));
+        add(ui);
+    });
+    let resp = ui.interact(inner.response.rect, id.with("hdr"), Sense::click());
+    if resp.clicked() {
+        open = !open;
+    }
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(id, open));
+    open
 }
 
 /// 1 px separator between list rows.
@@ -532,7 +578,7 @@ pub fn labeled<R>(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui) -> R) -> R
 /// A styled single/multi-line input: roomier margins and the accent focus
 /// glow on top of the theme's focus stroke.
 pub fn input(ui: &mut Ui, edit: egui::TextEdit<'_>) -> Response {
-    let resp = ui.add(edit.margin(Margin::symmetric(10, 7)));
+    let resp = ui.add(edit.margin(Margin::symmetric(10, 9)));
     focus_glow(ui, &resp);
     resp
 }

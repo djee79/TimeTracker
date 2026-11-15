@@ -192,7 +192,7 @@ fn list(app: &mut WorklogApp, ui_: &mut egui::Ui) {
                         let dim = |t: egui::RichText| if archived { t.weak() } else { t };
                         ui_.horizontal(|ui_| {
                             let mut swatch =
-                                egui::RichText::new("●").color(ui::project_color(ui_, p.id));
+                                egui::RichText::new("●").color(app.project_swatch(p.id).base);
                             if archived {
                                 swatch = swatch.weak();
                             }
