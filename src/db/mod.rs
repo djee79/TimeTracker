@@ -1,3 +1,4 @@
+pub mod day_off;
 pub mod log_entry;
 pub mod project;
 pub mod task;
@@ -6,6 +7,7 @@ use std::path::PathBuf;
 
 use rusqlite::Connection;
 
+pub use day_off::{DayOff, DayOffKind};
 pub use log_entry::{LogEntry, LogEntryRow, SavedEntry, JOURNAL_LIMIT};
 pub use project::{Project, ProjectStatus};
 pub use task::{Priority, Task, TaskSort, TaskStatus};
@@ -96,6 +98,29 @@ const MIGRATIONS: &[&str] = &[
     // v7: the task a log entry came from (bridge-created entries only).
     // Plain INTEGER, no FK: deleting a task must not orphan-block its entries.
     "ALTER TABLE log_entries ADD COLUMN task_id INTEGER;",
+    // v8: weekly-report row order (match the office timesheet). Back-filled
+    // with the alphabetical order the reports used until now.
+    "ALTER TABLE projects ADD COLUMN report_order INTEGER;
+     UPDATE projects SET report_order =
+        (SELECT COUNT(*) FROM projects p2 WHERE p2.code < projects.code);",
+    // v9: project colour (a palette key, see ui::theme::PALETTE). Existing
+    // projects get distinct entries in creation order: blue, lime, orange…
+    "ALTER TABLE projects ADD COLUMN color TEXT;
+     UPDATE projects SET color = CASE
+        (SELECT COUNT(*) FROM projects p2 WHERE p2.id < projects.id) % 6
+        WHEN 0 THEN 'blue' WHEN 1 THEN 'lime' WHEN 2 THEN 'orange'
+        WHEN 3 THEN 'pink' WHEN 4 THEN 'teal' ELSE 'violet' END;",
+    // v10: days off (holidays, vacation, sick, other) — one row per day.
+    // They clear the \"no hours\" warning and show in the weekly copy.
+    "CREATE TABLE days_off (
+        id     INTEGER PRIMARY KEY,
+        date   TEXT NOT NULL,                     -- YYYY-MM-DD
+        kind   TEXT NOT NULL,                     -- holiday | vacation | sick | other
+        label  TEXT,
+        half   INTEGER NOT NULL DEFAULT 0,
+        source TEXT NOT NULL DEFAULT 'manual'     -- manual | import:qc
+     );
+     CREATE UNIQUE INDEX days_off_date ON days_off(date);",
 ];
 
 pub struct Db {
@@ -262,6 +287,128 @@ mod tests {
             .unwrap();
         assert_eq!(v as usize, MIGRATIONS.len());
         db.migrate().unwrap(); // idempotent
+    }
+
+    /// A database at `version` (older schema) with three projects in it.
+    fn legacy_db(version: usize) -> Db {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..version] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", version as i64).unwrap();
+        for code in ["ZZZ-9", "AAA-1", "MMM-5"] {
+            conn.execute(
+                "INSERT INTO projects (code, name) VALUES (?1, 'n')",
+                [code],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO log_entries (work_date, project_id, description, hours, created_at)
+             VALUES ('2026-11-02', 1, 'kept', 2.5, '2026-11-02T10:00:00Z')",
+            [],
+        )
+        .unwrap();
+        Db { conn, path: PathBuf::new() }
+    }
+
+    #[test]
+    fn v7_database_upgrades_cleanly() {
+        let db = legacy_db(7);
+        db.migrate().unwrap();
+        // existing data untouched
+        assert_eq!(db.hours_on(d("2026-11-02")).unwrap(), 2.5);
+        // report order back-filled alphabetically by code
+        let codes: Vec<String> = db
+            .project_order()
+            .unwrap()
+            .iter()
+            .map(|id| db.list_projects().unwrap().into_iter().find(|p| p.id == *id).unwrap().code)
+            .collect();
+        assert_eq!(codes, ["AAA-1", "MMM-5", "ZZZ-9"]);
+        // colours back-filled in creation order
+        let colors: Vec<Option<String>> =
+            db.list_projects().unwrap().into_iter().map(|p| p.color).collect();
+        // list is ordered by code: AAA (id 2), MMM (id 3), ZZZ (id 1)
+        assert_eq!(
+            colors,
+            [Some("lime".into()), Some("orange".into()), Some("blue".into())]
+        );
+    }
+
+    #[test]
+    fn project_colour_and_month_hours() {
+        let db = Db::open_in_memory().unwrap();
+        let a = db.insert_project("AAA", "a", None).unwrap();
+        assert_eq!(db.list_projects().unwrap()[0].color, None);
+        db.set_project_color(a, "teal").unwrap();
+        assert_eq!(db.list_projects().unwrap()[0].color.as_deref(), Some("teal"));
+        db.insert_log_entry(d("2026-11-03"), a, "x", 1.5, false, None).unwrap();
+        db.insert_log_entry(d("2026-11-20"), a, "y", 2.0, false, None).unwrap();
+        db.insert_log_entry(d("2026-12-01"), a, "z", 4.0, false, None).unwrap();
+        let hours = db.hours_by_project(d("2026-11-01"), d("2026-11-30")).unwrap();
+        assert_eq!(hours.get(&a), Some(&3.5));
+    }
+
+    #[test]
+    fn project_report_order_saves_and_resets() {
+        let db = Db::open_in_memory().unwrap();
+        let b = db.insert_project("BBB", "b", None).unwrap();
+        let a = db.insert_project("AAA", "a", None).unwrap();
+        // new projects append at the end
+        assert_eq!(db.project_order().unwrap(), vec![b, a]);
+        let c = db.insert_project("CCC", "c", None).unwrap();
+        db.save_project_order(&[c, b, a]).unwrap();
+        assert_eq!(db.project_order().unwrap(), vec![c, b, a]);
+        // archived projects keep their slot
+        db.set_project_status(b, ProjectStatus::Archived).unwrap();
+        assert_eq!(db.project_order().unwrap(), vec![c, b, a]);
+        db.reset_project_order().unwrap();
+        assert_eq!(db.project_order().unwrap(), vec![a, b, c]);
+    }
+
+    #[test]
+    fn days_off_save_skip_overwrite_delete() {
+        let db = Db::open_in_memory().unwrap();
+        let dates = [d("2026-12-24"), d("2026-12-25")];
+        assert_eq!(
+            db.save_days_off(&dates, DayOffKind::Vacation, Some("xmas"), false, "manual", false)
+                .unwrap(),
+            2
+        );
+        // importing skips dates that already have a day off
+        assert_eq!(
+            db.save_days_off(&[d("2026-12-25"), d("2026-12-26")], DayOffKind::Holiday, None, false, "import:qc", false)
+                .unwrap(),
+            1
+        );
+        let rows = db.days_off_between(d("2026-12-01"), d("2026-12-31")).unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[1].kind, DayOffKind::Vacation);
+        assert_eq!(rows[1].describe(), "Vacation (xmas)");
+        // editing overwrites, half days round-trip
+        db.save_days_off(&[d("2026-12-25")], DayOffKind::Sick, None, true, "manual", true)
+            .unwrap();
+        let day = &db.days_off_between(d("2026-12-25"), d("2026-12-25")).unwrap()[0];
+        assert_eq!((day.kind, day.half), (DayOffKind::Sick, true));
+        assert_eq!(day.describe(), "Sick ½");
+        db.delete_day_off(d("2026-12-25")).unwrap();
+        assert_eq!(db.upcoming_days_off(d("2026-12-01"), 5).unwrap().len(), 2);
+        assert_eq!(db.upcoming_days_off(d("2026-12-25"), 5).unwrap()[0].date, d("2026-12-26"));
+    }
+
+    #[test]
+    fn hours_by_day_and_project() {
+        let db = Db::open_in_memory().unwrap();
+        let a = db.insert_project("AAA", "a", None).unwrap();
+        let b = db.insert_project("BBB", "b", None).unwrap();
+        db.insert_log_entry(d("2026-11-02"), a, "x", 1.0, false, None).unwrap();
+        db.insert_log_entry(d("2026-11-02"), a, "y", 2.0, false, None).unwrap();
+        db.insert_log_entry(d("2026-11-02"), b, "z", 0.5, false, None).unwrap();
+        assert_eq!(
+            db.hours_by_day_project(d("2026-11-01"), d("2026-11-30")).unwrap(),
+            vec![(d("2026-11-02"), a, 3.0), (d("2026-11-02"), b, 0.5)]
+        );
     }
 
     #[test]
@@ -650,6 +797,17 @@ mod tests {
 
         assert_eq!(db.hours_on(d("2026-07-04")).unwrap(), 3.5);
         assert_eq!(db.hours_on(d("2026-01-01")).unwrap(), 0.0);
+        // one-day window (journal filtered from the calendar)
+        let day = d("2026-07-03");
+        assert_eq!(
+            db.list_log_entries_between(None, Some(day), Some(day), "").unwrap().len(),
+            1
+        );
+        assert_eq!(
+            db.daily_hours(d("2026-07-01"), d("2026-07-31")).unwrap(),
+            vec![(d("2026-07-03"), 3.0), (d("2026-07-04"), 3.5)]
+        );
+        assert!(db.daily_hours(d("2026-07-05"), d("2026-07-31")).unwrap().is_empty());
     }
 
     #[test]

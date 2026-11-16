@@ -265,6 +265,18 @@ impl Db {
         since: Option<NaiveDate>,
         search: &str,
     ) -> Result<Vec<LogEntryRow>> {
+        self.list_log_entries_between(project_id, since, None, search)
+    }
+
+    /// Like `list_log_entries`, with an optional upper bound too (the
+    /// journal filtered to one day from the calendar).
+    pub fn list_log_entries_between(
+        &self,
+        project_id: Option<i64>,
+        since: Option<NaiveDate>,
+        until: Option<NaiveDate>,
+        search: &str,
+    ) -> Result<Vec<LogEntryRow>> {
         let mut sql = format!("{SELECT} WHERE 1=1");
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         if let Some(pid) = project_id {
@@ -274,6 +286,10 @@ impl Db {
         if let Some(d) = since {
             params.push(Box::new(d.to_string()));
             sql.push_str(&format!(" AND e.work_date >= ?{}", params.len()));
+        }
+        if let Some(d) = until {
+            params.push(Box::new(d.to_string()));
+            sql.push_str(&format!(" AND e.work_date <= ?{}", params.len()));
         }
         for term in search.split_whitespace() {
             let pattern = super::like_pattern(term);
@@ -299,8 +315,30 @@ impl Db {
         )
     }
 
+    /// Total hours per day in [from, to] inclusive; days with nothing
+    /// logged are absent. Feeds the week total and missing-day checks.
+    pub fn daily_hours(&self, from: NaiveDate, to: NaiveDate) -> Result<Vec<(NaiveDate, f64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT work_date, SUM(hours) FROM log_entries
+             WHERE work_date >= ?1 AND work_date <= ?2
+             GROUP BY work_date ORDER BY work_date",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![from.to_string(), to.to_string()], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (d, h) = row?;
+            if let Ok(d) = NaiveDate::parse_from_str(&d, "%Y-%m-%d") {
+                out.push((d, h));
+            }
+        }
+        Ok(out)
+    }
+
     /// All entries in [from, to] inclusive, ordered by project then date —
-    /// the shape both reports want.
+    /// the shape the reports want. Weekly/monthly (`dev_only` = false) follow
+    /// the saved report order; the annual R&D export stays alphabetical.
     pub fn log_entries_in_range(
         &self,
         from: NaiveDate,
@@ -313,7 +351,11 @@ impl Db {
         if dev_only {
             sql.push_str(" AND e.is_dev = 1");
         }
-        sql.push_str(" ORDER BY p.code, e.work_date, e.id");
+        if dev_only {
+            sql.push_str(" ORDER BY p.code, e.work_date, e.id");
+        } else {
+            sql.push_str(" ORDER BY p.report_order IS NULL, p.report_order, p.code, e.work_date, e.id");
+        }
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(
             rusqlite::params![from.to_string(), to.to_string()],

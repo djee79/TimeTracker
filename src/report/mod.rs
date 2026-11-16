@@ -2,11 +2,12 @@ pub mod pdf;
 
 use chrono::{Datelike, NaiveDate};
 
-use crate::db::{Db, LogEntryRow};
+use crate::db::{Db, DayOff, LogEntryRow};
 
 /// One project's slice of a report: total hours plus every entry, in
 /// chronological order.
 pub struct ProjectGroup {
+    pub project_id: i64,
     pub code: String,
     pub name: String,
     pub total_hours: f64,
@@ -17,6 +18,8 @@ pub struct WeeklyReport {
     pub week_start: NaiveDate, // Monday
     pub groups: Vec<ProjectGroup>,
     pub total_hours: f64,
+    /// Days off in the week — listed in the copy text, no hours.
+    pub days_off: Vec<DayOff>,
 }
 
 /// Monday of the week containing `date`.
@@ -36,7 +39,8 @@ pub fn month_end_of(month_start: NaiveDate) -> NaiveDate {
 
 /// Format hours without trailing noise: 8, 1.5, 0.25.
 pub fn fmt_hours(h: f64) -> String {
-    let s = format!("{h:.2}");
+    // + 0.0 turns -0.0 (an empty f64 sum) into 0.0
+    let s = format!("{:.2}", h + 0.0);
     s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
@@ -61,6 +65,7 @@ fn group_by_project(rows: Vec<LogEntryRow>) -> (Vec<ProjectGroup>, f64) {
                 g.entries.push(row);
             }
             _ => groups.push(ProjectGroup {
+                project_id: row.entry.project_id,
                 code: row.project_code.clone(),
                 name: row.project_name.clone(),
                 total_hours: row.entry.hours,
@@ -75,10 +80,12 @@ pub fn weekly(db: &Db, week_start: NaiveDate) -> Result<WeeklyReport, rusqlite::
     let week_end = week_start + chrono::Duration::days(6);
     let rows = db.log_entries_in_range(week_start, week_end, false)?;
     let (groups, total_hours) = group_by_project(rows);
+    let days_off = db.days_off_between(week_start, week_end)?;
     Ok(WeeklyReport {
         week_start,
         groups,
         total_hours,
+        days_off,
     })
 }
 
@@ -93,7 +100,6 @@ impl WeeklyReport {
         );
         if self.groups.is_empty() {
             out.push_str("\n(no entries this week)\n");
-            return out;
         }
         for g in &self.groups {
             out.push_str(&format!(
@@ -108,6 +114,16 @@ impl WeeklyReport {
                     row.entry.work_date.format("%a %m-%d"),
                     fmt_hours(row.entry.hours),
                     row.entry.description
+                ));
+            }
+        }
+        if !self.days_off.is_empty() {
+            out.push_str("\nDays off\n");
+            for d in &self.days_off {
+                out.push_str(&format!(
+                    "  - {}: {}\n",
+                    d.date.format("%a %m-%d"),
+                    d.describe()
                 ));
             }
         }
@@ -208,6 +224,7 @@ pub struct WeekGrid {
 }
 
 pub struct GridRow {
+    pub project_id: i64,
     pub code: String,
     pub name: String,
     pub days: [DayCell; 7],
@@ -263,6 +280,7 @@ impl WeekGrid {
                 }
             }
             rows.push(GridRow {
+                project_id: g.project_id,
                 code: g.code.clone(),
                 name: g.name.clone(),
                 days,
@@ -293,6 +311,47 @@ impl WeekGrid {
         }
         out
     }
+}
+
+/// Weekdays in [from, to] that should have hours but don't: Monday–Friday,
+/// strictly before `today`, nothing logged, and no day off (a half day off
+/// counts as off). `logged` is hours per day (days absent = nothing).
+pub fn missing_weekdays(
+    from: NaiveDate,
+    to: NaiveDate,
+    logged: &[(NaiveDate, f64)],
+    days_off: &[NaiveDate],
+    today: NaiveDate,
+) -> Vec<NaiveDate> {
+    let mut out = Vec::new();
+    let mut d = from;
+    while d <= to && d < today {
+        let weekday = d.weekday().num_days_from_monday() < 5;
+        let has_hours = logged.iter().any(|(day, h)| *day == d && *h > 0.0);
+        if weekday && !has_hours && !days_off.contains(&d) {
+            out.push(d);
+        }
+        d += chrono::Duration::days(1);
+    }
+    out
+}
+
+/// Move `src` next to `target` (above it when `before`) in a full ordering.
+/// Unknown ids leave the order unchanged.
+pub fn move_in_order(order: &[i64], src: i64, target: i64, before: bool) -> Vec<i64> {
+    let mut ids = order.to_vec();
+    if src == target {
+        return ids;
+    }
+    let Some(from) = ids.iter().position(|&id| id == src) else {
+        return ids;
+    };
+    ids.remove(from);
+    let Some(at) = ids.iter().position(|&id| id == target) else {
+        return order.to_vec();
+    };
+    ids.insert(if before { at } else { at + 1 }, src);
+    ids
 }
 
 /// Annual dev export: `is_dev` entries for `year`, grouped by project,
@@ -353,6 +412,94 @@ mod tests {
     }
 
     #[test]
+    fn missing_weekdays_rules() {
+        // Mon 2026-11-09 … Sun 11-15; today = Thu 11-12
+        let today = d("2026-11-12");
+        let logged = [(d("2026-11-10"), 3.0), (d("2026-11-11"), 0.0)];
+        // Mon missing, Tue logged, Wed zero hours → missing, Thu = today
+        assert_eq!(
+            missing_weekdays(d("2026-11-09"), d("2026-11-15"), &logged, &[], today),
+            vec![d("2026-11-09"), d("2026-11-11")]
+        );
+        // a day off (full or half) clears it
+        assert_eq!(
+            missing_weekdays(d("2026-11-09"), d("2026-11-15"), &logged, &[d("2026-11-09")], today),
+            vec![d("2026-11-11")]
+        );
+        // weekends never count, and future days don't either
+        let sunday = d("2026-11-16");
+        assert_eq!(
+            missing_weekdays(d("2026-11-14"), d("2026-11-15"), &[], &[], sunday),
+            Vec::<NaiveDate>::new()
+        );
+        assert!(missing_weekdays(d("2026-11-20"), d("2026-11-27"), &[], &[], today).is_empty());
+    }
+
+    #[test]
+    fn missing_weekdays_across_month_and_year() {
+        // Wed 2025-12-31 → Fri 2026-01-02, today far ahead
+        let today = d("2026-02-01");
+        let got = missing_weekdays(
+            d("2025-12-30"),
+            d("2026-01-04"),
+            &[(d("2026-01-02"), 1.0)],
+            &[d("2026-01-01")],
+            today,
+        );
+        assert_eq!(got, vec![d("2025-12-30"), d("2025-12-31")]);
+        // partial week: a range that starts mid-week
+        let got = missing_weekdays(d("2026-01-29"), d("2026-01-31"), &[], &[], today);
+        assert_eq!(got, vec![d("2026-01-29"), d("2026-01-30")]);
+    }
+
+    #[test]
+    fn weekly_text_lists_days_off() {
+        let db = Db::open_in_memory().unwrap();
+        db.save_days_off(
+            &[d("2026-11-27")],
+            crate::db::DayOffKind::Vacation,
+            Some("long weekend"),
+            false,
+            "manual",
+            false,
+        )
+        .unwrap();
+        let rep = weekly(&db, d("2026-11-23")).unwrap();
+        let text = rep.to_text();
+        assert!(text.contains("(no entries this week)"));
+        assert!(text.contains("  - Fri 11-27: Vacation (long weekend)"), "{text}");
+    }
+
+    #[test]
+    fn row_order_moves() {
+        let order = [1, 2, 3, 4];
+        assert_eq!(move_in_order(&order, 3, 1, true), vec![3, 1, 2, 4]);
+        assert_eq!(move_in_order(&order, 1, 3, false), vec![2, 3, 1, 4]);
+        // jumping past a hidden neighbour (2 has no hours this week)
+        assert_eq!(move_in_order(&order, 1, 3, false), vec![2, 3, 1, 4]);
+        assert_eq!(move_in_order(&order, 4, 4, true), vec![1, 2, 3, 4]);
+        assert_eq!(move_in_order(&order, 9, 1, true), vec![1, 2, 3, 4]);
+        assert_eq!(move_in_order(&order, 1, 9, true), vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn weekly_follows_report_order() {
+        let db = Db::open_in_memory().unwrap();
+        let a = db.insert_project("AAA", "a", None).unwrap();
+        let z = db.insert_project("ZZZ", "z", None).unwrap();
+        db.insert_log_entry(d("2026-11-10"), a, "x", 1.0, true, None).unwrap();
+        db.insert_log_entry(d("2026-11-10"), z, "y", 2.0, true, None).unwrap();
+        db.save_project_order(&[z, a]).unwrap();
+        let rep = weekly(&db, d("2026-11-09")).unwrap();
+        let codes: Vec<&str> = rep.groups.iter().map(|g| g.code.as_str()).collect();
+        assert_eq!(codes, ["ZZZ", "AAA"]);
+        assert!(rep.to_text().find("ZZZ").unwrap() < rep.to_text().find("AAA").unwrap());
+        // the annual export stays alphabetical
+        let (csv, _) = annual_dev_csv(&db, 2026).unwrap();
+        assert!(csv.find("AAA").unwrap() < csv.find("ZZZ").unwrap());
+    }
+
+    #[test]
     fn week_start_snaps_to_monday() {
         assert_eq!(week_start_of(d("2026-07-03")), d("2026-06-29")); // Fri -> Mon
         assert_eq!(week_start_of(d("2026-06-29")), d("2026-06-29")); // Mon stays
@@ -361,6 +508,7 @@ mod tests {
 
     #[test]
     fn hours_format_trims() {
+        assert_eq!(fmt_hours(std::iter::empty::<f64>().sum()), "0");
         assert_eq!(fmt_hours(8.0), "8");
         assert_eq!(fmt_hours(1.5), "1.5");
         assert_eq!(fmt_hours(0.25), "0.25");

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>worklog — Projects dialog</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0b0b0d}
+a{color:#aab6ff}a:hover{color:#c8d0ff}
+.hov:hover{background:#1f1f25 !important}
+.ib:hover{background:#2a2a32 !important;color:#ececf1 !important}
+input::placeholder{color:#85858f}
+input:focus{outline:none;border-color:#8b9cff !important;box-shadow:0 0 0 3px rgba(139,156,255,.22)}
+.switch{appearance:none;-webkit-appearance:none;width:34px;height:20px;border-radius:999px;background:#33333b;position:relative;margin:0;cursor:pointer;flex:none}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#c9c9d2;transition:transform .15s}
+.switch:checked{background:#8b9cff}
+.switch:checked::after{transform:translateX(14px);background:#fff}
+</style>
+</helmet>
+<div style="width: 960px; height: 880px; box-sizing: border-box; padding: 48px 100px; background: #0b0b0d; display: flex; align-items: flex-start; justify-content: center; color: #ececf1; font-family: Inter, system-ui, sans-serif; font-size: 14px; line-height: 1.4">
+  <div role="dialog" aria-label="Projects" style="width: 760px; background: #18181c; border: 1px solid #2c2c34; border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,0.55); overflow: hidden; display: flex; flex-direction: column">
+
+    <div style="display: flex; align-items: center; gap: 12px; padding: 18px 20px 16px 24px; border-bottom: 1px solid #24242a">
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em">Projects</h2>
+        <span style="font-size: 12.5px; color: #9a9aa6">2 active</span>
+      </div>
+      <button class="ib" aria-label="Close" style="width: 36px; height: 36px; border-radius: 9px; border: 0; background: transparent; color: #a9a9b5; display: grid; place-items: center; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>
+    </div>
+
+    <section aria-label="New project" style="padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; border-bottom: 1px solid #24242a">
+      <h3 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #8e8e9a">New project</h3>
+      <div style="display: grid; grid-template-columns: 150px minmax(0, 1fr) 180px; gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <label for="p-code" style="font-size: 12px; font-weight: 500; color: #9a9aa6">Code</label>
+          <input id="p-code" placeholder="HICA-002" style="height: 38px; box-sizing: border-box; padding: 0 12px; background: #0f0f12; border: 1px solid #2c2c34; border-radius: 9px; color: #ececf1; font-family: 'JetBrains Mono', monospace; font-size: 13.5px">
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <label for="p-name" style="font-size: 12px; font-weight: 500; color: #9a9aa6">Name</label>
+          <input id="p-name" placeholder="Project name" style="height: 38px; box-sizing: border-box; padding: 0 12px; background: #0f0f12; border: 1px solid #2c2c34; border-radius: 9px; color: #ececf1; font: inherit; font-size: 14px">
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <label for="p-client" style="font-size: 12px; font-weight: 500; color: #9a9aa6">Client <span style="color: #85858f; font-weight: 400">(optional)</span></label>
+          <input id="p-client" placeholder="Client" style="height: 38px; box-sizing: border-box; padding: 0 12px; background: #0f0f12; border: 1px solid #2c2c34; border-radius: 9px; color: #ececf1; font: inherit; font-size: 14px">
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 14px">
+        <span style="font-size: 12px; font-weight: 500; color: #9a9aa6">Colour</span>
+        <div role="radiogroup" aria-label="Project colour" style="display: flex; gap: 8px">
+          <button role="radio" aria-checked="false" aria-label="Blue" style="width: 22px; height: 22px; border-radius: 50%; border: 0; background: #7aa2f7; cursor: pointer"></button>
+          <button role="radio" aria-checked="false" aria-label="Lime" style="width: 22px; height: 22px; border-radius: 50%; border: 0; background: #b8d46a; cursor: pointer"></button>
+          <button role="radio" aria-checked="true" aria-label="Orange" style="width: 22px; height: 22px; border-radius: 50%; border: 0; background: #f08a5d; box-shadow: 0 0 0 2px #18181c, 0 0 0 4px #ececf1; cursor: pointer"></button>
+          <button role="radio" aria-checked="false" aria-label="Pink" style="width: 22px; height: 22px; border-radius: 50%; border: 0; background: #e48ac6; cursor: pointer"></button>
+          <button role="radio" aria-checked="false" aria-label="Teal" style="width: 22px; height: 22px; border-radius: 50%; border: 0; background: #5ccfc0; cursor: pointer"></button>
+          <button role="radio" aria-checked="false" aria-label="Violet" style="width: 22px; height: 22px; border-radius: 50%; border: 0; background: #b294f5; cursor: pointer"></button>
+        </div>
+        <div style="flex: 1"></div>
+        <button style="height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 18px; border: 0; border-radius: 9px; background: #8b9cff; color: #0f1330; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Add project</button>
+      </div>
+    </section>
+
+    <section aria-label="Active projects" style="padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; border-bottom: 1px solid #24242a">
+      <div class="hov" style="display: flex; align-items: center; gap: 14px; height: 52px; padding: 0 8px; border-radius: 10px">
+        <span style="width: 12px; height: 12px; border-radius: 4px; background: #7aa2f7; flex: none"></span>
+        <span style="width: 110px; font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; color: #c9d7fb">Dev Work</span>
+        <span style="flex: 1; font-size: 14px; color: #c9c9d2">programming work</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: #9a9aa6">6 h this month</span>
+        <button class="ib" aria-label="Edit Dev Work" style="width: 34px; height: 34px; border-radius: 8px; border: 0; background: transparent; color: #8e8e9a; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"></path></svg></button>
+        <button class="ib" aria-label="Archive Dev Work" style="width: 34px; height: 34px; border-radius: 8px; border: 0; background: transparent; color: #8e8e9a; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1.5"></rect><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"></path></svg></button>
+      </div>
+      <div class="hov" style="display: flex; align-items: center; gap: 14px; height: 52px; padding: 0 8px; border-radius: 10px">
+        <span style="width: 12px; height: 12px; border-radius: 4px; background: #b8d46a; flex: none"></span>
+        <span style="width: 110px; font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; color: #dbe9b0">HICA-003</span>
+        <span style="flex: 1; display: flex; align-items: center; gap: 10px; font-size: 14px; color: #c9c9d2">Hydro interface<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: #a9a9b5; border: 1px solid #33333b; padding: 0 6px; border-radius: 5px">ACME</span></span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: #9a9aa6">2 h this month</span>
+        <button class="ib" aria-label="Edit HICA-003" style="width: 34px; height: 34px; border-radius: 8px; border: 0; background: transparent; color: #8e8e9a; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"></path></svg></button>
+        <button class="ib" aria-label="Archive HICA-003" style="width: 34px; height: 34px; border-radius: 8px; border: 0; background: transparent; color: #8e8e9a; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1.5"></rect><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"></path></svg></button>
+      </div>
+    </section>
+
+    <section aria-label="App settings" style="padding: 20px 24px 24px; display: flex; flex-direction: column; gap: 6px; background: #151518">
+      <h3 style="margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #8e8e9a">App settings</h3>
+
+      <div style="display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; align-items: start; padding: 10px 0; border-bottom: 1px solid #222228">
+        <div style="display: flex; flex-direction: column; gap: 3px; padding-top: 8px">
+          <label for="s-backup" style="font-size: 14px; font-weight: 500">Backup mirror</label>
+          <span style="font-size: 12px; color: #9a9aa6">Daily snapshots, copied here too</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <div style="display: flex; gap: 8px">
+            <input id="s-backup" placeholder="/mnt/nas/worklog-backups" style="flex: 1; height: 38px; box-sizing: border-box; padding: 0 12px; background: #0f0f12; border: 1px solid #2c2c34; border-radius: 9px; color: #ececf1; font-family: 'JetBrains Mono', monospace; font-size: 13px">
+            <button class="ib" style="height: 38px; display: flex; align-items: center; gap: 7px; padding: 0 14px; border-radius: 9px; border: 1px solid #2c2c34; background: #1d1d22; color: #d6d6de; font: inherit; font-size: 13px; cursor: pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>Choose…</button>
+          </div>
+          <span style="font-size: 12px; color: #9a9aa6">Use a second disk or a NAS so the log survives this disk dying.</span>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid #222228">
+        <div style="display: flex; flex-direction: column; gap: 3px">
+          <label for="s-name" style="font-size: 14px; font-weight: 500">Name on PDF reports</label>
+          <span style="font-size: 12px; color: #9a9aa6">Shown as “Prepared by …”</span>
+        </div>
+        <input id="s-name" placeholder="Your name" style="height: 38px; box-sizing: border-box; padding: 0 12px; background: #0f0f12; border: 1px solid #2c2c34; border-radius: 9px; color: #ececf1; font: inherit; font-size: 14px">
+      </div>
+
+      <label style="display: flex; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid #222228; cursor: pointer">
+        <span style="flex: 1; display: flex; flex-direction: column; gap: 3px"><span style="font-size: 14px; font-weight: 500">Splash screen at startup</span><span style="font-size: 12px; color: #9a9aa6">Show the logo while the database opens</span></span>
+        <input type="checkbox" class="switch" checked>
+      </label>
+
+      <div style="display: flex; align-items: center; gap: 16px; padding: 14px 0">
+        <label for="s-idle" style="flex: 1; display: flex; flex-direction: column; gap: 3px; cursor: pointer"><span style="font-size: 14px; font-weight: 500">Pause timers when idle</span><span style="font-size: 12px; color: #9a9aa6">Stops the running task when the machine goes quiet</span></label>
+        <button class="ib" style="height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border-radius: 8px; border: 1px solid #2c2c34; background: #1d1d22; color: #d6d6de; font: inherit; font-size: 13px; cursor: pointer"><span style="font-family: 'JetBrains Mono', monospace">10 min</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8e8e9a" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+        <input id="s-idle" type="checkbox" class="switch" checked>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":960,"height":880}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

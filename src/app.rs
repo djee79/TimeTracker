@@ -14,6 +14,51 @@ pub enum Tab {
     Journal,
     Tasks,
     Reports,
+    Calendar,
+}
+
+/// The Calendar's "Mark day" form.
+#[derive(Clone)]
+pub struct DayOffForm {
+    pub kind: crate::db::DayOffKind,
+    pub label: String,
+    pub half: bool,
+    /// Range mode: every weekday from the selected day to `range_end`.
+    pub range: bool,
+    pub range_end: NaiveDate,
+    /// The selected day already has a day off (offer Delete).
+    pub existing: bool,
+}
+
+impl DayOffForm {
+    pub fn new(day: NaiveDate) -> DayOffForm {
+        DayOffForm {
+            kind: crate::db::DayOffKind::Vacation,
+            label: String::new(),
+            half: false,
+            range: false,
+            range_end: day,
+            existing: false,
+        }
+    }
+}
+
+/// The Québec-holidays import preview.
+pub struct QcImport {
+    pub year: i32,
+    pub easter: crate::holidays::EasterDay,
+    /// (date, name, checked)
+    pub rows: Vec<(NaiveDate, &'static str, bool)>,
+}
+
+/// One calendar month's data, loaded in a couple of queries.
+#[derive(Default)]
+pub struct CalData {
+    /// Hours per project for each day, in report order.
+    pub hours: std::collections::HashMap<NaiveDate, Vec<(i64, f64)>>,
+    pub days_off: std::collections::HashMap<NaiveDate, crate::db::DayOff>,
+    pub missing: Vec<NaiveDate>,
+    pub upcoming: Vec<crate::db::DayOff>,
 }
 
 /// How far back the journal list looks.
@@ -121,6 +166,9 @@ pub enum PendingKind {
     Completed { prev_status: TaskStatus, was_active: bool },
     /// "Log time so far" on a still-open task; it keeps running.
     Midway,
+    /// Timer stopped from the top bar ("stop & log"): the task went back to
+    /// to-do. "Cancel" restarts it.
+    Stopped { was_active: bool },
 }
 
 /// A single unbroken timer stretch this long probably means the timer was
@@ -141,16 +189,31 @@ pub struct PendingLog {
     pub form: EntryForm,
 }
 
+/// The notes editor's view.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NoteMode {
+    Edit,
+    Split,
+    Preview,
+}
+
 /// State of the task-notes window: one task's markdown details being
 /// viewed or edited. Closing the window saves.
 pub struct TaskDetails {
     pub task_id: i64,
     pub task_title: String,
+    pub project_code: String,
+    pub swatch: ui::theme::Swatch,
+    /// Some of this task's journal entries are flagged R&D.
+    pub is_dev: bool,
     pub text: String,
     /// Last saved copy — drives the "unsaved" hint.
     pub saved: String,
-    /// Rendered view vs the raw-markdown editor.
-    pub preview: bool,
+    /// None = pick by width (Split when the window is ≥ 800 px wide).
+    pub mode: Option<NoteMode>,
+    pub collapsed: bool,
+    /// Esc with unsaved changes: showing the "close without saving?" bar.
+    pub confirm_close: bool,
 }
 
 /// A just-deleted record (or just-merged entry), kept so the status bar can
@@ -170,8 +233,10 @@ pub enum UndoItem {
 /// How long the status-bar Undo stays available after a deletion.
 pub const UNDO_WINDOW_SECS: u64 = 10;
 
-/// No input for this long pauses running task timers (when enabled).
-pub const IDLE_PAUSE_SECS: u64 = 10 * 60;
+/// Default idle delay before running task timers pause (when enabled).
+pub const IDLE_PAUSE_MINS: u64 = 10;
+/// The choices offered in settings.
+pub const IDLE_PAUSE_CHOICES: [u64; 4] = [5, 10, 15, 30];
 
 /// Add/edit form state for the Projects window.
 #[derive(Default)]
@@ -180,6 +245,8 @@ pub struct ProjectForm {
     pub code: String,
     pub name: String,
     pub client: String,
+    /// Palette key.
+    pub color: String,
 }
 
 pub struct WorklogApp {
@@ -194,7 +261,14 @@ pub struct WorklogApp {
     pub filter_range: FilterRange,
     /// Live text search over the journal (description/project, any order).
     pub filter_text: String,
+    /// Journal narrowed to one day (double-click in the Calendar).
+    pub filter_day: Option<NaiveDate>,
     pub editing_entry: Option<(i64, EntryForm)>,
+    /// Journal row picked for the notes panel.
+    pub selected_entry_id: Option<i64>,
+    /// (done, total) checklist counts of the tasks behind journal entries,
+    /// keyed by task id — refreshed with the entries.
+    pub entry_checklists: std::collections::HashMap<i64, (usize, usize)>,
     pub confirm_delete_entry: Option<i64>,
 
     // Tasks
@@ -241,6 +315,16 @@ pub struct WorklogApp {
     /// PDF exports include the linked task's notes under each entry. Persisted.
     pub pdf_include_notes: bool,
 
+    // Calendar
+    /// First of the month shown.
+    pub cal_month: NaiveDate,
+    pub cal_selected: Option<NaiveDate>,
+    pub cal_form: DayOffForm,
+    pub qc_import: Option<QcImport>,
+    cal_cache: Option<(NaiveDate, u64, std::rc::Rc<CalData>)>,
+    /// Date-picker marker dots for one visible month.
+    marker_cache: Option<(NaiveDate, u64, std::rc::Rc<ui::date_picker::DayMarkers>)>,
+
     // Global search (Ctrl+F)
     pub show_search: bool,
     pub search_query: String,
@@ -252,6 +336,8 @@ pub struct WorklogApp {
     pub settings_mirror_dir: String,
     pub settings_author: String,
     pub idle_pause: bool,
+    /// Minutes without input before timers pause. Persisted.
+    pub idle_pause_mins: u64,
     pub show_splash: bool,
 
     /// Splash artwork, loaded lazily for the Help window's about-footer.
@@ -280,6 +366,10 @@ pub struct WorklogApp {
     data_version: u64,
     /// Hours logged today, cached per (day, data_version) for the status bar.
     today_hours: Option<(NaiveDate, u64, f64)>,
+    /// Hours logged this week (Mon–Sun), same caching as `today_hours`.
+    week_hours: Option<(NaiveDate, u64, f64)>,
+    /// Missing weekdays this week, same caching.
+    week_missing: Option<(NaiveDate, u64, usize)>,
     pub status: Option<(String, Instant)>,
     focus_id: Option<egui::Id>,
 }
@@ -378,7 +468,10 @@ impl WorklogApp {
             filter_project: None,
             filter_range: FilterRange::Days30,
             filter_text: String::new(),
+            filter_day: None,
             editing_entry: None,
+            selected_entry_id: None,
+            entry_checklists: Default::default(),
             confirm_delete_entry: None,
             new_task_title: String::new(),
             new_task_project: None,
@@ -404,12 +497,19 @@ impl WorklogApp {
             month_start: report::month_start_of(today),
             report_year: today.year(),
             pdf_include_notes: true,
+            cal_month: report::month_start_of(today),
+            cal_selected: None,
+            cal_form: DayOffForm::new(today),
+            qc_import: None,
+            cal_cache: None,
+            marker_cache: None,
             show_search: false,
             search_query: String::new(),
             undo_delete: None,
             settings_mirror_dir: String::new(),
             settings_author: String::new(),
             idle_pause: true,
+            idle_pause_mins: IDLE_PAUSE_MINS,
             show_splash: boot.show_splash,
             splash: None,
             idle: crate::idle::IdleMonitor::new(),
@@ -423,6 +523,8 @@ impl WorklogApp {
             db_warning: None,
             data_version: 0,
             today_hours: None,
+            week_hours: None,
+            week_missing: None,
             status: None,
             focus_id: None,
         };
@@ -439,6 +541,12 @@ impl WorklogApp {
         app.settings_mirror_dir = app.db.setting("backup_mirror_dir").unwrap_or_default();
         app.settings_author = app.db.setting("report_author").unwrap_or_default();
         app.idle_pause = app.db.setting("idle_pause").as_deref() != Some("0");
+        app.idle_pause_mins = app
+            .db
+            .setting("idle_pause_minutes")
+            .and_then(|v| v.parse().ok())
+            .filter(|m| IDLE_PAUSE_CHOICES.contains(m))
+            .unwrap_or(IDLE_PAUSE_MINS);
         if app.db.setting("task_sort").as_deref() == Some("manual") {
             app.task_sort = TaskSort::Manual;
         }
@@ -490,6 +598,14 @@ impl WorklogApp {
         self.projects.iter().find(|p| p.id == id)
     }
 
+    /// A project's palette colours (dots, chips, bars, coloured codes).
+    pub fn project_swatch(&self, id: i64) -> ui::theme::Swatch {
+        match self.project(id) {
+            Some(p) => ui::swatch_of(p),
+            None => ui::theme::swatch(None, id),
+        }
+    }
+
     pub fn reload_projects(&mut self) {
         self.projects = self.db.list_projects().unwrap_or_default();
     }
@@ -497,12 +613,23 @@ impl WorklogApp {
     pub fn reload_entries(&mut self) {
         self.entries = self
             .db
-            .list_log_entries(
+            .list_log_entries_between(
                 self.filter_project,
-                self.filter_range.since(today()),
+                self.filter_day.or(self.filter_range.since(today())),
+                self.filter_day,
                 &self.filter_text,
             )
             .unwrap_or_default();
+        let mut task_ids: Vec<i64> = self.entries.iter().filter_map(|r| r.entry.task_id).collect();
+        task_ids.sort_unstable();
+        task_ids.dedup();
+        self.entry_checklists = task_ids
+            .into_iter()
+            .filter_map(|id| {
+                let task = self.db.task(id).ok().flatten()?;
+                Some((id, task.checklist()?))
+            })
+            .collect();
     }
 
     /// Hours logged today (all projects, ignores the journal filters).
@@ -518,15 +645,34 @@ impl WorklogApp {
         }
     }
 
+    /// Hours logged in the current Monday–Sunday week.
+    pub fn week_hours(&mut self) -> f64 {
+        let today = today();
+        match self.week_hours {
+            Some((d, v, h)) if d == today && v == self.data_version => h,
+            _ => {
+                let start = report::week_start_of(today);
+                let end = start + chrono::Duration::days(6);
+                let h = self
+                    .db
+                    .daily_hours(start, end)
+                    .map(|days| days.iter().map(|(_, h)| h).sum())
+                    .unwrap_or(0.0);
+                self.week_hours = Some((today, self.data_version, h));
+                h
+            }
+        }
+    }
+
     pub fn reload_tasks(&mut self) {
         self.open_tasks = self.db.list_open_tasks(self.task_sort).unwrap_or_default();
         // In auto mode the active task jumps to the very top (stable sort
         // keeps the doing → priority → recency order for everything else).
         // Manual order is the user's — never rearrange it.
-        if self.task_sort == TaskSort::Auto {
-            if let Some(id) = self.active_task_id {
-                self.open_tasks.sort_by_key(|t| t.id != id);
-            }
+        if self.task_sort == TaskSort::Auto
+            && let Some(id) = self.active_task_id
+        {
+            self.open_tasks.sort_by_key(|t| t.id != id);
         }
         self.done_tasks = self
             .db
@@ -599,9 +745,14 @@ impl WorklogApp {
         self.task_details = Some(TaskDetails {
             task_id: task.id,
             task_title: task.title.clone(),
+            project_code: task.project_code.clone(),
+            swatch: self.project_swatch(task.project_id),
+            is_dev: self.db.task_has_dev_entries(task.id).unwrap_or(false),
             text: task.details.clone(),
             saved: task.details.clone(),
-            preview: !task.details.trim().is_empty(),
+            mode: None,
+            collapsed: false,
+            confirm_close: false,
         });
     }
 
@@ -671,14 +822,15 @@ impl WorklogApp {
             return;
         };
         let idle_secs = idle_secs.min(self.last_app_activity.elapsed().as_secs());
-        if !self.idle_paused && idle_secs >= IDLE_PAUSE_SECS {
+        let limit = self.idle_pause_mins * 60;
+        if !self.idle_paused && idle_secs >= limit {
             // bank only up to the moment activity stopped
             let stop_at = chrono::Utc::now() - chrono::Duration::seconds(idle_secs as i64);
             let _ = self.db.stop_all_task_timers(stop_at);
             self.idle_paused = true;
             self.set_status("Task timers paused — machine idle");
             self.touch();
-        } else if self.idle_paused && idle_secs < IDLE_PAUSE_SECS {
+        } else if self.idle_paused && idle_secs < limit {
             let _ = self.db.restart_doing_timers(chrono::Utc::now());
             self.idle_paused = false;
             self.set_status("Task timers resumed");
@@ -817,6 +969,46 @@ impl WorklogApp {
         self.touch();
     }
 
+    /// Start (or resume) a task: in progress, timer running, and the active
+    /// task that follows you across screens.
+    pub fn activate_task(&mut self, id: i64) {
+        if let Err(e) = self.db.set_task_status(id, TaskStatus::Doing) {
+            self.set_status(format!("Update failed: {e}"));
+        }
+        let _ = self.db.start_task_timer(id, chrono::Utc::now());
+        self.touch();
+        self.set_active_task(Some(id));
+    }
+
+    /// Change an open task's status. Leaving "doing" stops its timer and,
+    /// for the active task, clears the active slot.
+    pub fn change_task_status(&mut self, id: i64, status: TaskStatus) {
+        if let Err(e) = self.db.set_task_status(id, status) {
+            self.set_status(format!("Update failed: {e}"));
+        }
+        if status != TaskStatus::Doing && self.active_task_id == Some(id) {
+            self.set_active_task(None);
+        }
+        if status != TaskStatus::Doing {
+            let _ = self.db.stop_task_timer(id, chrono::Utc::now());
+        }
+        self.touch();
+    }
+
+    /// Pause = back to to-do with the timer banked.
+    pub fn pause_task(&mut self, id: i64) {
+        self.change_task_status(id, TaskStatus::Todo);
+    }
+
+    /// The top bar's "stop & log": pause the task and offer its time in the
+    /// log bridge on the Tasks screen.
+    pub fn stop_and_log(&mut self, task: &Task) {
+        let was_active = self.active_task_id == Some(task.id);
+        self.pause_task(task.id);
+        self.open_bridge(task, PendingKind::Stopped { was_active });
+        self.tab = Tab::Tasks;
+    }
+
     /// Called when the bridge's entry was saved: the tracked counter has been
     /// logged, so it starts over from zero (any still-running stretch counts
     /// from where the bridge opened).
@@ -828,8 +1020,10 @@ impl WorklogApp {
     /// Undo a completion from the bridge ("Cancel"): the task goes back to
     /// the exact state it was in — status, active flag, running timer.
     pub fn undo_complete(&mut self, pending: &PendingLog) {
-        let PendingKind::Completed { prev_status, was_active } = pending.kind else {
-            return;
+        let (prev_status, was_active) = match pending.kind {
+            PendingKind::Completed { prev_status, was_active } => (prev_status, was_active),
+            PendingKind::Stopped { was_active } => (TaskStatus::Doing, was_active),
+            PendingKind::Midway => return,
         };
         if let Err(e) = self.db.set_task_status(pending.task_id, prev_status) {
             self.set_status(format!("Reopen failed: {e}"));
@@ -855,10 +1049,153 @@ impl WorklogApp {
                 week_start: self.week_start,
                 groups: Vec::new(),
                 total_hours: 0.0,
+                days_off: Vec::new(),
             });
             self.weekly_cache = Some((self.week_start, self.data_version, rep));
         }
         &self.weekly_cache.as_ref().unwrap().2
+    }
+
+    /// The weekly report as paste-ready text (preview, Copy week).
+    pub fn weekly_text(&mut self) -> String {
+        self.weekly_report().to_text()
+    }
+
+    /// Past weekdays of the week starting `week_start` with no hours and no
+    /// day off.
+    pub fn missing_in_week(&self, week_start: NaiveDate) -> Vec<NaiveDate> {
+        let end = week_start + chrono::Duration::days(6);
+        self.missing_between(week_start, end)
+    }
+
+    /// Past weekdays in [from, to] with no hours and no day off.
+    pub fn missing_between(&self, from: NaiveDate, to: NaiveDate) -> Vec<NaiveDate> {
+        let logged = self.db.daily_hours(from, to).unwrap_or_default();
+        let off: Vec<NaiveDate> = self
+            .db
+            .days_off_between(from, to)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| d.date)
+            .collect();
+        report::missing_weekdays(from, to, &logged, &off, today())
+    }
+
+    /// Missing weekdays in the current week, cached for the status bar.
+    pub fn missing_this_week(&mut self) -> usize {
+        let today = today();
+        match self.week_missing {
+            Some((d, v, n)) if d == today && v == self.data_version => n,
+            _ => {
+                let n = self.missing_in_week(report::week_start_of(today)).len();
+                self.week_missing = Some((today, self.data_version, n));
+                n
+            }
+        }
+    }
+
+    /// Move a weekly-report row next to another (above when `before`) in
+    /// the global project order and save it.
+    pub fn move_report_row(&mut self, src: i64, target: i64, before: bool) {
+        let order = match self.db.project_order() {
+            Ok(o) => o,
+            Err(e) => {
+                self.set_status(format!("Reorder failed: {e}"));
+                return;
+            }
+        };
+        let new = report::move_in_order(&order, src, target, before);
+        if new != order {
+            if let Err(e) = self.db.save_project_order(&new) {
+                self.set_status(format!("Reorder failed: {e}"));
+            }
+            self.reload_projects();
+            self.touch();
+        }
+    }
+
+    /// The calendar month's data (6 visible weeks), cached per data version.
+    pub fn calendar_data(&mut self) -> std::rc::Rc<CalData> {
+        if let Some((m, v, data)) = &self.cal_cache
+            && *m == self.cal_month
+            && *v == self.data_version
+        {
+            return data.clone();
+        }
+        let (from, to) = crate::ui::calendar::visible_range(self.cal_month);
+        let mut data = CalData::default();
+        for (d, pid, h) in self.db.hours_by_day_project(from, to).unwrap_or_default() {
+            data.hours.entry(d).or_default().push((pid, h));
+        }
+        for off in self.db.days_off_between(from, to).unwrap_or_default() {
+            data.days_off.insert(off.date, off);
+        }
+        data.missing = self.missing_between(from, to);
+        data.upcoming = self.db.upcoming_days_off(today(), 5).unwrap_or_default();
+        let data = std::rc::Rc::new(data);
+        self.cal_cache = Some((self.cal_month, self.data_version, data.clone()));
+        data
+    }
+
+    /// The date picker's marker dots for the 6 weeks shown with `month`,
+    /// cached per data version (same queries as the Calendar).
+    pub fn day_markers(&mut self, month: NaiveDate) -> std::rc::Rc<ui::date_picker::DayMarkers> {
+        use ui::date_picker::{Marker, marker};
+        if let Some((m, v, data)) = &self.marker_cache
+            && *m == month
+            && *v == self.data_version
+        {
+            return data.clone();
+        }
+        let (from, to) = crate::ui::calendar::visible_range(month);
+        let mut hours: std::collections::HashMap<NaiveDate, Vec<(i64, f64)>> = Default::default();
+        for (d, pid, h) in self.db.hours_by_day_project(from, to).unwrap_or_default() {
+            hours.entry(d).or_default().push((pid, h));
+        }
+        let off: std::collections::HashMap<NaiveDate, crate::db::DayOffKind> = self
+            .db
+            .days_off_between(from, to)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|o| (o.date, o.kind))
+            .collect();
+        let missing = self.missing_between(from, to);
+        let mut out = ui::date_picker::DayMarkers::new();
+        let mut day = from;
+        while day <= to {
+            let m = marker(
+                hours.get(&day).map(Vec::as_slice).unwrap_or(&[]),
+                off.get(&day).copied(),
+                missing.contains(&day),
+            );
+            let color = match m {
+                Some(Marker::Project(pid)) => Some(self.project_swatch(pid).base),
+                Some(Marker::DayOff(kind)) => Some(ui::calendar::kind_colors(kind).0),
+                Some(Marker::Missing) => Some(ui::theme::AMBER),
+                None => None,
+            };
+            if let Some(c) = color {
+                out.insert(day, c);
+            }
+            day += chrono::Duration::days(1);
+        }
+        let out = std::rc::Rc::new(out);
+        self.marker_cache = Some((month, self.data_version, out.clone()));
+        out
+    }
+
+    /// Calendar → Journal: show just that day's entries.
+    pub fn open_journal_day(&mut self, day: NaiveDate) {
+        self.filter_day = Some(day);
+        self.filter_text.clear();
+        self.tab = Tab::Journal;
+        self.reload_entries();
+    }
+
+    /// Calendar → Reports at the week containing `day`.
+    pub fn open_report_week(&mut self, day: NaiveDate) {
+        self.week_start = report::week_start_of(day);
+        self.tab = Tab::Reports;
     }
 
     /// Save-dialog + render for a built PDF document (or report the build
@@ -926,9 +1263,12 @@ impl Drop for WorklogApp {
 impl eframe::App for WorklogApp {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
-        // Keyboard shortcuts: Ctrl+1/2/3 switch tabs, Ctrl+N quick-capture,
+        // Keyboard shortcuts: Ctrl+1–4 (or bare 1–4) switch tabs, Ctrl+N quick-capture,
         // Ctrl+T new task, Ctrl+F search, Ctrl+K find an open task.
         let mut had_input = false;
+        // an open date picker takes Esc and the bare keys
+        let picker_open = ui::date_picker::begin_frame(&ctx);
+        let typing = ctx.egui_wants_keyboard_input() || picker_open;
         ctx.input_mut(|i| {
             use egui::{Key, Modifiers};
             had_input = !i.events.is_empty() || i.pointer.is_moving();
@@ -940,6 +1280,22 @@ impl eframe::App for WorklogApp {
             }
             if i.consume_key(Modifiers::CTRL, Key::Num3) {
                 self.tab = Tab::Reports;
+            }
+            // bare 1–3 too, as long as no text field wants the keys
+            if !typing {
+                for (key, tab) in [
+                    (Key::Num1, Tab::Journal),
+                    (Key::Num2, Tab::Tasks),
+                    (Key::Num3, Tab::Reports),
+                    (Key::Num4, Tab::Calendar),
+                ] {
+                    if i.consume_key(Modifiers::NONE, key) {
+                        self.tab = tab;
+                    }
+                }
+            }
+            if i.consume_key(Modifiers::CTRL, Key::Num4) {
+                self.tab = Tab::Calendar;
             }
             if i.consume_key(Modifiers::CTRL, Key::N) {
                 self.tab = Tab::Journal;
@@ -965,112 +1321,26 @@ impl eframe::App for WorklogApp {
         // Guaranteed wake-ups so the idle poll runs even with no interaction.
         ctx.request_repaint_after(std::time::Duration::from_secs(15));
 
-        egui::Panel::top(egui::Id::new("tabs")).show(root, |ui_| {
-            ui_.add_space(4.0);
-            ui_.horizontal(|ui_| {
-                ui_.selectable_value(&mut self.tab, Tab::Journal, "  Journal  ");
-                ui_.selectable_value(&mut self.tab, Tab::Tasks, "  Tasks  ");
-                ui_.selectable_value(&mut self.tab, Tab::Reports, "  Reports  ");
-                ui_.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui_| {
-                    if ui_.button("?").on_hover_text("help").clicked() {
-                        self.show_help = true;
-                    }
-                    if ui_
-                        .button("🔍")
-                        .on_hover_text("search everything (Ctrl+F)")
-                        .clicked()
-                    {
-                        self.show_search = true;
-                        self.request_focus(ui::FOCUS_SEARCH);
-                    }
-                    if ui_.button("Projects…").clicked() {
-                        self.show_projects = true;
-                    }
-                    // The active task follows you across screens; click to
-                    // jump back to it after an interruption.
-                    if let Some(task) = self.active_task() {
-                        let mut title = task.title.clone();
-                        if title.chars().count() > 40 {
-                            title = title.chars().take(39).collect::<String>() + "…";
-                        }
-                        let chip = egui::RichText::new(format!(
-                            "⏵ {}  {}",
-                            task.project_code, title
-                        ))
-                        .color(ui_.visuals().selection.stroke.color);
-                        if ui_
-                            .button(chip)
-                            .on_hover_text(format!("Active task: {}", task.title))
-                            .clicked()
-                        {
-                            self.tab = Tab::Tasks;
-                        }
-                    }
-                });
-            });
-            ui_.add_space(4.0);
-        });
+        ui::shell::top_bar(self, root);
+        ui::shell::status_bar(self, root);
 
-        // Status bar: message for 5 s, plus the DB path for backup peace of mind.
-        egui::Panel::bottom(egui::Id::new("status")).show(root, |ui_| {
-            ui_.horizontal(|ui_| {
-                if let Some(warning) = &self.db_warning {
-                    ui_.label(
-                        egui::RichText::new(warning)
-                            .color(ui_.visuals().error_fg_color)
-                            .strong(),
-                    );
-                }
-                match &self.undo_delete {
-                    Some((item, at)) if at.elapsed().as_secs() < UNDO_WINDOW_SECS => {
-                        let label = match item {
-                            UndoItem::Merge { .. } => "↩ Undo merge",
-                            _ => "↩ Undo delete",
-                        };
-                        if ui_.button(label).clicked() {
-                            self.undo_delete_now();
-                        }
-                        ctx.request_repaint_after(std::time::Duration::from_millis(500));
-                    }
-                    Some(_) => self.undo_delete = None,
-                    None => {}
-                }
-                if let Some((text, at)) = &self.status {
-                    if at.elapsed().as_secs_f32() < 5.0 {
-                        ui_.label(egui::RichText::new(text).strong());
-                        ctx.request_repaint_after(std::time::Duration::from_millis(500));
-                    } else {
-                        self.status = None;
-                    }
-                }
-                ui_.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui_| {
-                    ui_.label(
-                        egui::RichText::new(self.db.path().display().to_string())
-                            .weak()
-                            .small(),
-                    );
-                    ui_.separator();
-                    // end-of-day sanity check: did I log what I worked on?
-                    let today_h = self.today_hours();
-                    let text = if today_h > 0.0 {
-                        format!("today: {} h", report::fmt_hours(today_h))
-                    } else {
-                        "today: nothing logged".to_string()
-                    };
-                    ui_.label(egui::RichText::new(text).weak());
-                });
-            });
-        });
-
-        egui::CentralPanel::default().show(root, |ui_| match self.tab {
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::new()
+                    .fill(ui::theme::BG)
+                    .inner_margin(egui::Margin::symmetric(ui::theme::PAGE_PAD, 18)),
+            )
+            .show(root, |ui_| match self.tab {
             Tab::Journal => ui::journal::show(self, ui_),
             Tab::Tasks => ui::tasks::show(self, ui_),
             Tab::Reports => ui::reports::show(self, ui_),
+            Tab::Calendar => ui::calendar::show(self, ui_),
         });
 
         ui::projects::show_window(self, &ctx);
-        ui::tasks::details_window(self, &ctx);
+        ui::notes_editor::details_window(self, &ctx);
         ui::search::show_window(self, &ctx);
+        ui::calendar::import_dialog(self, &ctx);
         ui::help::show_window(self, &ctx);
     }
 }

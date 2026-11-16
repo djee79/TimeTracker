@@ -31,14 +31,11 @@ pub struct Project {
     pub name: String,
     pub client: Option<String>,
     pub status: ProjectStatus,
+    /// Palette key (`ui::theme::PALETTE`); None falls back to an id pick.
+    pub color: Option<String>,
 }
 
 impl Project {
-    /// "CODE — Name", the standard way a project is shown in pickers.
-    pub fn label(&self) -> String {
-        format!("{} — {}", self.code, self.name)
-    }
-
     fn from_row(row: &Row) -> rusqlite::Result<Project> {
         Ok(Project {
             id: row.get(0)?,
@@ -46,6 +43,7 @@ impl Project {
             name: row.get(2)?,
             client: row.get(3)?,
             status: ProjectStatus::parse(&row.get::<_, String>(4)?),
+            color: row.get(5)?,
         })
     }
 }
@@ -53,7 +51,7 @@ impl Project {
 impl Db {
     pub fn list_projects(&self) -> Result<Vec<Project>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, code, name, client, status FROM projects
+            "SELECT id, code, name, client, status, color FROM projects
              ORDER BY status = 'archived', code",
         )?;
         let rows = stmt.query_map([], Project::from_row)?;
@@ -62,7 +60,8 @@ impl Db {
 
     pub fn insert_project(&self, code: &str, name: &str, client: Option<&str>) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO projects (code, name, client) VALUES (?1, ?2, ?3)",
+            "INSERT INTO projects (code, name, client, report_order)
+             VALUES (?1, ?2, ?3, (SELECT COALESCE(MAX(report_order), -1) + 1 FROM projects))",
             rusqlite::params![code, name, client],
         )?;
         Ok(self.conn.last_insert_rowid())
@@ -88,5 +87,59 @@ impl Db {
             rusqlite::params![id, status.as_str()],
         )?;
         Ok(())
+    }
+
+    /// Every project id in report order (then code) — archived ones too,
+    /// so they keep their slot.
+    pub fn project_order(&self) -> Result<Vec<i64>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM projects ORDER BY report_order IS NULL, report_order, code")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        rows.collect()
+    }
+
+    /// Rewrite the report order from `ids` (first = top), in one transaction.
+    pub fn save_project_order(&self, ids: &[i64]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        for (i, id) in ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE projects SET report_order = ?2 WHERE id = ?1",
+                rusqlite::params![id, i as i64],
+            )?;
+        }
+        tx.commit()
+    }
+
+    /// Back to alphabetical by code.
+    pub fn reset_project_order(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "UPDATE projects SET report_order =
+                (SELECT COUNT(*) FROM projects p2 WHERE p2.code < projects.code);",
+        )
+    }
+
+    pub fn set_project_color(&self, id: i64, color: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE projects SET color = ?2 WHERE id = ?1",
+            rusqlite::params![id, color],
+        )?;
+        Ok(())
+    }
+
+    /// Hours per project in [from, to] inclusive ("X h this month").
+    pub fn hours_by_project(
+        &self,
+        from: chrono::NaiveDate,
+        to: chrono::NaiveDate,
+    ) -> Result<std::collections::HashMap<i64, f64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT project_id, SUM(hours) FROM log_entries
+             WHERE work_date >= ?1 AND work_date <= ?2 GROUP BY project_id",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![from.to_string(), to.to_string()], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?;
+        rows.collect()
     }
 }

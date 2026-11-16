@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>worklog — Date picker</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#111113}
+.ib:hover{background:#2a2a32 !important;color:#ececf1 !important}
+</style>
+</helmet>
+<div style="width: 1000px; height: 640px; box-sizing: border-box; padding: 48px 56px; background: #111113; color: #ececf1; font-family: Inter, system-ui, sans-serif; font-size: 14px; line-height: 1.4; display: flex; gap: 72px; align-items: flex-start">
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <button aria-expanded="true" style="align-self: flex-start; height: 38px; display: flex; align-items: center; gap: 9px; padding: 0 12px; background: #0f0f12; border: 1px solid #8b9cff; box-shadow: 0 0 0 3px rgba(139,156,255,0.22); border-radius: 9px; color: #ececf1; font: inherit; font-size: 13px; cursor: pointer">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8e8e9a" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path></svg>
+      Today, Nov 15
+    </button>
+
+    <div role="dialog" aria-label="Choose date" style="width: 316px; box-sizing: border-box; padding: 12px; background: #18181c; border: 1px solid #2c2c34; border-radius: 14px; box-shadow: 0 18px 48px rgba(0,0,0,0.55); display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; align-items: center; gap: 4px">
+        <button class="ib" style="height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer">November <span style="color: #9a9aa6; font-weight: 500">2026</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8e8e9a" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+        <div style="flex: 1"></div>
+        <button class="ib" aria-label="Previous month" style="width: 32px; height: 32px; border-radius: 8px; border: 0; background: transparent; color: #a9a9b5; display: grid; place-items: center; cursor: pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg></button>
+        <button class="ib" aria-label="Next month" style="width: 32px; height: 32px; border-radius: 8px; border: 0; background: transparent; color: #a9a9b5; display: grid; place-items: center; cursor: pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg></button>
+      </div>
+
+      <div style="display: flex; gap: 6px">
+        <button class="ib" style="height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid #2c2c34; background: #1d1d22; color: #d6d6de; font: inherit; font-size: 12px; cursor: pointer">Today</button>
+        <button class="ib" style="height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid #2c2c34; background: #1d1d22; color: #d6d6de; font: inherit; font-size: 12px; cursor: pointer">Yesterday</button>
+        <button class="ib" style="height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid #2c2c34; background: #1d1d22; color: #d6d6de; font: inherit; font-size: 12px; cursor: pointer">Last Friday</button>
+      </div>
+
+      <div role="grid" aria-label="November 2026" style="display: grid; grid-template-columns: 26px repeat(7, minmax(0, 1fr)); gap: 2px">
+        <span style="height: 24px; display: grid; place-items: center; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #85858f">wk</span>
+        <span style="height: 24px; display: grid; place-items: center; font-size: 11.5px; font-weight: 500; color: #9a9aa6">Mo</span>
+        <span style="height: 24px; display: grid; place-items: center; font-size: 11.5px; font-weight: 500; color: #9a9aa6">Tu</span>
+        <span style="height: 24px; display: grid; place-items: center; font-size: 11.5px; font-weight: 500; color: #9a9aa6">We</span>
+        <span style="height: 24px; display: grid; place-items: center; font-size: 11.5px; font-weight: 500; color: #9a9aa6">Th</span>
+        <span style="height: 24px; display: grid; place-items: center; font-size: 11.5px; font-weight: 500; color: #9a9aa6">Fr</span>
+        <span style="height: 24px; display: grid; place-items: center; font-size: 11.5px; font-weight: 500; color: #85858f">Sa</span>
+        <span style="height: 24px; display: grid; place-items: center; font-size: 11.5px; font-weight: 500; color: #85858f">Su</span>
+
+        <span style="height: 36px; display: grid; place-items: center; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #85858f">44</span>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #85858f; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">26<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #85858f; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">27<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #85858f; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">28<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #85858f; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">29<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #85858f; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">30<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #85858f; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">31<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #a9a9b5; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">1<span style="width: 4px; height: 4px"></span></button>
+
+        <span style="height: 36px; display: grid; place-items: center; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #85858f">45</span>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">2<span style="width: 4px; height: 4px; border-radius: 50%; background: #f2b04c"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">3<span style="width: 4px; height: 4px; border-radius: 50%; background: #f2b04c"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">4<span style="width: 4px; height: 4px; border-radius: 50%; background: #f2b04c"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">5<span style="width: 4px; height: 4px; border-radius: 50%; background: #7aa2f7"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">6<span style="width: 4px; height: 4px; border-radius: 50%; background: #f2b04c"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #a9a9b5; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">7<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #a9a9b5; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">8<span style="width: 4px; height: 4px"></span></button>
+
+        <span style="height: 36px; display: grid; place-items: center; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #85858f">46</span>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">9<span style="width: 4px; height: 4px; border-radius: 50%; background: #f2b04c"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">10<span style="width: 4px; height: 4px; border-radius: 50%; background: #f2b04c"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">11<span style="width: 4px; height: 4px; border-radius: 50%; background: #b8d46a"></span></button>
+        <button style="height: 36px; border: 0; border-radius: 8px; background: #2a2a32; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">12<span style="width: 4px; height: 4px; border-radius: 50%; background: #f2b04c"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">13<span style="width: 4px; height: 4px; border-radius: 50%; background: #f2b04c"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #a9a9b5; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">14<span style="width: 4px; height: 4px"></span></button>
+        <button aria-current="date" aria-selected="true" style="height: 36px; border: 0; border-radius: 8px; background: #8b9cff; color: #0f1330; font: inherit; font-size: 13px; font-weight: 700; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">15<span style="width: 4px; height: 4px; border-radius: 50%; background: #0f1330"></span></button>
+
+        <span style="height: 36px; display: grid; place-items: center; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #85858f">47</span>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">16<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">17<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">18<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">19<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">20<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #a9a9b5; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">21<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #a9a9b5; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">22<span style="width: 4px; height: 4px"></span></button>
+
+        <span style="height: 36px; display: grid; place-items: center; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #85858f">48</span>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">23<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">24<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">25<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">26<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">27<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #a9a9b5; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">28<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #a9a9b5; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">29<span style="width: 4px; height: 4px"></span></button>
+
+        <span style="height: 36px; display: grid; place-items: center; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #85858f">49</span>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">30<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #85858f; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">1<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #85858f; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">2<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #85858f; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">3<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #85858f; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">4<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #85858f; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">5<span style="width: 4px; height: 4px"></span></button>
+        <button class="ib" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #85858f; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer">6<span style="width: 4px; height: 4px"></span></button>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 4px 2px; border-top: 1px solid #24242a; font-size: 11.5px; color: #9a9aa6">
+        <span style="display: flex; align-items: center; gap: 5px"><span style="width: 5px; height: 5px; border-radius: 50%; background: #7aa2f7"></span>logged</span>
+        <span style="display: flex; align-items: center; gap: 5px"><span style="width: 5px; height: 5px; border-radius: 50%; background: #f2b04c"></span>no hours</span>
+        <div style="flex: 1"></div>
+        <span style="display: flex; align-items: center; gap: 4px"><kbd style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; padding: 0 5px; border: 1px solid #33333b; border-radius: 4px; color: #c9c9d2">↵</kbd>pick</span>
+        <span style="display: flex; align-items: center; gap: 4px"><kbd style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; padding: 0 5px; border: 1px solid #33333b; border-radius: 4px; color: #c9c9d2">Esc</kbd>close</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px; padding-top: 46px">
+    <div role="dialog" aria-label="Choose month" style="width: 316px; box-sizing: border-box; padding: 12px; background: #18181c; border: 1px solid #2c2c34; border-radius: 14px; box-shadow: 0 18px 48px rgba(0,0,0,0.55); display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 4px">
+        <button class="ib" style="height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: #ececf1; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer">2026<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8e8e9a" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m6 15 6-6 6 6"></path></svg></button>
+        <div style="flex: 1"></div>
+        <button class="ib" aria-label="Previous year" style="width: 32px; height: 32px; border-radius: 8px; border: 0; background: transparent; color: #a9a9b5; display: grid; place-items: center; cursor: pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg></button>
+        <button class="ib" aria-label="Next year" style="width: 32px; height: 32px; border-radius: 8px; border: 0; background: transparent; color: #a9a9b5; display: grid; place-items: center; cursor: pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg></button>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+        <button class="ib" style="height: 44px; border: 0; border-radius: 9px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; cursor: pointer">Jan</button>
+        <button class="ib" style="height: 44px; border: 0; border-radius: 9px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; cursor: pointer">Feb</button>
+        <button class="ib" style="height: 44px; border: 0; border-radius: 9px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; cursor: pointer">Mar</button>
+        <button class="ib" style="height: 44px; border: 0; border-radius: 9px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; cursor: pointer">Apr</button>
+        <button class="ib" style="height: 44px; border: 0; border-radius: 9px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; cursor: pointer">May</button>
+        <button class="ib" style="height: 44px; border: 0; border-radius: 9px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; cursor: pointer">Jun</button>
+        <button class="ib" style="height: 44px; border: 0; border-radius: 9px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; cursor: pointer">Jul</button>
+        <button class="ib" style="height: 44px; border: 0; border-radius: 9px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; cursor: pointer">Aug</button>
+        <button class="ib" style="height: 44px; border: 0; border-radius: 9px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; cursor: pointer">Sep</button>
+        <button class="ib" style="height: 44px; border: 0; border-radius: 9px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; cursor: pointer">Oct</button>
+        <button aria-selected="true" style="height: 44px; border: 0; border-radius: 9px; background: #8b9cff; color: #0f1330; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer">Nov</button>
+        <button class="ib" style="height: 44px; border: 0; border-radius: 9px; background: transparent; color: #ececf1; font: inherit; font-size: 13px; cursor: pointer">Dec</button>
+      </div>
+      <div style="padding: 10px 4px 2px; border-top: 1px solid #24242a; font-size: 11.5px; color: #9a9aa6">Click the month title to get here · pick a month to go back to days</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1000,"height":640}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

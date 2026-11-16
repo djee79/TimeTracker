@@ -1,116 +1,237 @@
-use crate::app::{today, EntryForm, FilterRange, UndoItem, WorklogApp};
+use egui::{Align, Layout, Margin, RichText, Sense, vec2};
+
+use crate::app::{EntryForm, FilterRange, UndoItem, WorklogApp, today};
+use crate::db::LogEntryRow;
 use crate::report::fmt_hours;
 use crate::ui;
+use crate::ui::theme::{self as t, Weight};
+use crate::ui::widgets::{self as w, icon};
 
 pub fn show(app: &mut WorklogApp, ui_: &mut egui::Ui) {
-    capture_strip(app, ui_);
-    ui_.add_space(8.0);
+    capture_card(app, ui_);
+    ui_.add_space(18.0);
     filter_row(app, ui_);
-    ui_.separator();
-    if app.show_notes_panel {
-        egui::Panel::right(egui::Id::new("journal/notes_panel"))
-            .resizable(true)
-            .default_size(280.0)
-            .show(ui_, |ui_| ui::tasks::notes_panel(app, ui_));
-    }
-    egui::CentralPanel::default()
-        .frame(egui::Frame::new())
-        .show(ui_, |ui_| entry_list(app, ui_));
+    ui_.add_space(16.0);
+    let show_panel = app.show_notes_panel;
+    ui::notes::with_side_panel(
+        app,
+        ui_,
+        "journal/notes_panel",
+        show_panel,
+        ui::notes::PANEL_WIDTH,
+        |app, ui_| {
+            let entry = app
+                .selected_entry_id
+                .and_then(|id| app.entries.iter().find(|r| r.entry.id == id).cloned());
+            ui::notes::panel(app, ui_, entry);
+        },
+        entry_list,
+    );
 }
 
-/// The fast-capture form. Enter anywhere in it saves.
+/// The fast-capture card. Enter anywhere in it saves.
 /// (`app.capture` is moved out for the frame because `entry_form_fields`
 /// needs `&mut app` alongside the form.)
-fn capture_strip(app: &mut WorklogApp, ui_: &mut egui::Ui) {
-    egui::Frame::group(ui_.style())
-        .fill(ui_.visuals().faint_bg_color)
+fn capture_card(app: &mut WorklogApp, ui_: &mut egui::Ui) {
+    w::card_frame()
+        .inner_margin(Margin::symmetric(20, 18))
         .show(ui_, |ui_| {
             ui_.set_width(ui_.available_width());
-            ui_.label(egui::RichText::new("Log work").strong());
+            ui_.horizontal(|ui_| {
+                ui_.label(w::semibold("Log work", 15.0));
+                ui_.with_layout(Layout::right_to_left(Align::Center), |ui_| {
+                    ui_.spacing_mut().item_spacing.x = 5.0;
+                    ui_.label(RichText::new("to add").size(12.0).color(t::MUTED));
+                    w::kbd(ui_, "Enter");
+                    ui_.label(RichText::new("Press").size(12.0).color(t::MUTED));
+                });
+            });
+            ui_.add_space(6.0);
 
             let mut form = std::mem::replace(&mut app.capture, EntryForm::new(None, today()));
-            let submit = ui::entry_form_fields(
-                app,
-                ui_,
-                &mut form,
-                "capture",
-                Some(ui::FOCUS_CAPTURE_DESC),
-                None,
-            );
-            let valid = form.is_valid();
-            if (ui_
-                .add_enabled(valid, egui::Button::new("Add entry"))
-                .on_hover_text("Enter also saves")
-                .clicked()
-                || (submit && valid))
-                && app.save_entry_form(&form)
-            {
-                form = EntryForm::new(form.project_id, form.work_date);
-                app.request_focus(ui::FOCUS_CAPTURE_DESC);
-            }
+            ui_.horizontal_wrapped(|ui_| {
+                ui_.spacing_mut().item_spacing = vec2(12.0, 12.0);
+                let submit = ui::entry_form_fields(
+                    app,
+                    ui_,
+                    &mut form,
+                    "capture",
+                    Some(ui::FOCUS_CAPTURE_DESC),
+                    None,
+                    true,
+                    250.0,
+                );
+                let valid = form.is_valid();
+                let clicked = w::labeled(ui_, " ", |ui_| {
+                    ui_.add_enabled(
+                        valid,
+                        w::primary(format!("{}  Add entry", icon::PLUS)).min_size(vec2(0.0, 36.0)),
+                    )
+                    .on_hover_text("Enter also saves")
+                    .clicked()
+                });
+                if (clicked || (submit && valid)) && app.save_entry_form(&form) {
+                    form = EntryForm::new(form.project_id, form.work_date);
+                    app.request_focus(ui::FOCUS_CAPTURE_DESC);
+                }
+            });
             app.capture = form;
         });
 }
 
 fn filter_row(app: &mut WorklogApp, ui_: &mut egui::Ui) {
     ui_.horizontal(|ui_| {
-        ui_.label("Show:");
+        ui_.spacing_mut().item_spacing.x = 10.0;
         let projects = app.projects.clone();
         if ui::project_filter_combo(ui_, "journal/filter_proj", &projects, &mut app.filter_project)
         {
             app.reload_entries();
         }
+        if let Some(day) = app.filter_day {
+            let text = format!("{}  {}", day.format("%a, %b %-d"), icon::X);
+            if ui_
+                .add(
+                    egui::Button::new(w::rich(&text, t::font(13.0, Weight::Medium), t::ACCENT_TEXT))
+                        .fill(t::accent_tint())
+                        .stroke(egui::Stroke::new(1.0, t::alpha(t::ACCENT, 0.4)))
+                        .corner_radius(t::R_INPUT)
+                        .min_size(vec2(0.0, 30.0)),
+                )
+                .on_hover_text("Showing one day (from the calendar) — click to go back to the range")
+                .clicked()
+            {
+                app.filter_day = None;
+                app.reload_entries();
+            }
+        }
         let mut range = app.filter_range;
         egui::ComboBox::from_id_salt("journal/filter_range")
-            .selected_text(range.label())
+            .selected_text(capitalized(range.label()))
             .show_ui(ui_, |ui_| {
                 for r in FilterRange::ALL {
-                    ui_.selectable_value(&mut range, r, r.label());
+                    ui_.selectable_value(&mut range, r, capitalized(r.label()));
                 }
             });
         if range != app.filter_range {
             app.filter_range = range;
+            app.filter_day = None;
             app.reload_entries();
         }
-        if ui_
-            .add(
-                egui::TextEdit::singleline(&mut app.filter_text)
-                    .hint_text("search: text or project…")
-                    .desired_width(200.0),
-            )
-            .changed()
+        if search_field(
+            ui_,
+            &mut app.filter_text,
+            "Search text or project…",
+            300.0,
+            None,
+        )
+        .changed()
         {
             app.reload_entries();
         }
-        if !app.filter_text.is_empty() && ui_.button("✖").on_hover_text("clear search").clicked()
-        {
-            app.filter_text.clear();
-            app.reload_entries();
-        }
-        let mut panel = app.show_notes_panel;
-        ui_.checkbox(&mut panel, "notes panel")
-            .on_hover_text("show the selected task's notes beside the list");
-        if panel != app.show_notes_panel {
-            app.show_notes_panel = panel;
-            let _ = app.db.set_setting("notes_panel", if panel { "1" } else { "0" });
-        }
-        let total: f64 = app.entries.iter().map(|e| e.entry.hours).sum();
-        ui_.label(
-            egui::RichText::new(format!(
-                "{} entries, {} h",
-                app.entries.len(),
-                fmt_hours(total)
-            ))
-            .weak(),
-        );
+        ui_.add_space(4.0);
+        notes_panel_toggle(app, ui_);
+
+        ui_.with_layout(Layout::right_to_left(Align::Center), |ui_| {
+            let total: f64 = app.entries.iter().map(|e| e.entry.hours).sum();
+            ui_.spacing_mut().item_spacing.x = 4.0;
+            ui_.label(w::mono_semi(format!("{} h", fmt_hours(total)), 13.0).color(t::TEXT));
+            ui_.label(
+                RichText::new(format!("{} entries ·", app.entries.len()))
+                    .size(13.0)
+                    .color(t::MUTED),
+            );
+        });
     });
 }
 
+pub fn capitalized(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => String::new(),
+    }
+}
+
+/// The "Notes panel" switch (Journal and Tasks share the setting).
+pub fn notes_panel_toggle(app: &mut WorklogApp, ui_: &mut egui::Ui) {
+    let mut panel = app.show_notes_panel;
+    w::toggle(ui_, &mut panel, "Notes panel")
+        .on_hover_text("Show the selected task's notes beside the list");
+    if panel != app.show_notes_panel {
+        app.show_notes_panel = panel;
+        let _ = app.db.set_setting("notes_panel", if panel { "1" } else { "0" });
+    }
+}
+
+/// A search box with a magnifier on the left, a clear ✕ while it has text
+/// and an optional key hint (`Ctrl K`) on the right.
+pub fn search_field(
+    ui_: &mut egui::Ui,
+    text: &mut String,
+    hint: &str,
+    width: f32,
+    key_hint: Option<&str>,
+) -> egui::Response {
+    let right_pad: i8 = if key_hint.is_some() { 64 } else { 30 };
+    let mut resp = ui_.add(
+        egui::TextEdit::singleline(text)
+            .hint_text(RichText::new(hint).color(t::FAINT))
+            .background_color(t::PANEL)
+            .margin(Margin { left: 34, right: right_pad, top: 8, bottom: 8 })
+            .desired_width(width),
+    );
+    w::focus_glow(ui_, &resp);
+    let r = resp.rect;
+    ui_.painter().text(
+        egui::pos2(r.left() + 12.0, r.center().y),
+        egui::Align2::LEFT_CENTER,
+        icon::MAGNIFYING_GLASS,
+        t::icon_font(15.0),
+        t::FAINT,
+    );
+    if !text.is_empty() {
+        let x_rect = egui::Rect::from_center_size(
+            egui::pos2(r.right() - 16.0, r.center().y),
+            egui::Vec2::splat(22.0),
+        );
+        let x = ui_.interact(x_rect, resp.id.with("clear"), Sense::click());
+        ui_.painter().text(
+            x_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            icon::X,
+            t::icon_font(13.0),
+            if x.hovered() { t::TEXT } else { t::FAINT },
+        );
+        if x.on_hover_text("Clear (Esc)").clicked() {
+            text.clear();
+            resp.mark_changed();
+        }
+    } else if let Some(k) = key_hint {
+        let galley = ui_
+            .painter()
+            .layout_no_wrap(k.to_string(), t::mono(11.0), t::MUTED);
+        let size = galley.size() + vec2(12.0, 4.0);
+        let kr = egui::Rect::from_min_size(
+            egui::pos2(r.right() - 8.0 - size.x, r.center().y - size.y / 2.0),
+            size,
+        );
+        ui_.painter().rect_stroke(
+            kr,
+            5,
+            egui::Stroke::new(1.0, t::SWITCH_OFF),
+            egui::StrokeKind::Inside,
+        );
+        ui_.painter().galley(kr.min + vec2(6.0, 2.0), galley, t::MUTED);
+    }
+    resp
+}
+
 enum Action {
-    Edit(usize),
+    Edit(i64),
     SaveEdit,
     CancelEdit,
     Delete(i64),
+    Select(i64, Option<i64>),
 }
 
 fn entry_list(app: &mut WorklogApp, ui_: &mut egui::Ui) {
@@ -119,15 +240,6 @@ fn entry_list(app: &mut WorklogApp, ui_: &mut egui::Ui) {
         .auto_shrink([false, false])
         .show(ui_, |ui_| {
             let entries = app.entries.clone();
-            // Column widths in characters: code and hours are padded to the
-            // widest in the list (monospace), so descriptions line up no
-            // matter the project, the decimals, or the dev badge.
-            let code_w = entries.iter().map(|r| r.project_code.chars().count()).max().unwrap_or(0);
-            let hours_w = entries
-                .iter()
-                .map(|r| fmt_hours(r.entry.hours).chars().count())
-                .max()
-                .unwrap_or(0);
             // One collapsible section per day (entries arrive date-sorted):
             // fold days you're done reading. State is keyed on the date, so
             // it survives edits and reloads within the session.
@@ -141,77 +253,95 @@ fn entry_list(app: &mut WorklogApp, ui_: &mut egui::Ui) {
                     .unwrap_or(entries.len());
                 let day = &entries[day_start..day_end];
                 let day_hours: f64 = day.iter().map(|r| r.entry.hours).sum();
-                ui_.add_space(6.0);
-                // Mixed-style header: quiet date, prominent day total — the
-                // total is what gets scanned when checking a week's logging.
-                let small = egui::TextStyle::Small.resolve(ui_.style());
-                let mut header = egui::text::LayoutJob::default();
-                header.append(
-                    &date.format("%A %Y-%m-%d").to_string(),
-                    0.0,
-                    egui::text::TextFormat {
-                        font_id: small.clone(),
-                        color: ui_.visuals().weak_text_color(),
-                        ..Default::default()
+                let open = w::collapsible_header(
+                    ui_,
+                    egui::Id::new(("journal/day", date)),
+                    true,
+                    false,
+                    |ui_| {
+                        ui_.spacing_mut().item_spacing.x = 6.0;
+                        ui_.label(
+                            RichText::new(date.format("%A").to_string())
+                                .font(t::font(13.0, Weight::Semibold))
+                                .color(t::TEXT),
+                        );
+                        ui_.label(
+                            RichText::new(format!("· {}", date.format("%b %-d")))
+                                .font(t::font(13.0, Weight::Medium))
+                                .color(t::MUTED),
+                        );
+                        ui_.add_space(6.0);
+                        if date == today() {
+                            w::today_badge(ui_);
+                            ui_.add_space(6.0);
+                        }
+                        // total right-aligned, hairline filling the gap
+                        let total = w::mono_semi(format!("{} h", fmt_hours(day_hours)), 13.0)
+                            .color(t::TEXT);
+                        let galley = egui::WidgetText::from(total.clone()).into_galley(
+                            ui_,
+                            Some(egui::TextWrapMode::Extend),
+                            f32::INFINITY,
+                            egui::TextStyle::Body,
+                        );
+                        w::hairline(ui_, galley.size().x + 16.0);
+                        ui_.add_space(6.0);
+                        ui_.label(total);
                     },
                 );
-                header.append(
-                    &format!("   {} h", fmt_hours(day_hours)),
-                    0.0,
-                    egui::text::TextFormat {
-                        font_id: small,
-                        color: ui_.visuals().strong_text_color(),
-                        ..Default::default()
-                    },
-                );
-                egui::CollapsingHeader::new(header)
-                .id_salt(("journal/day", date))
-                .default_open(true)
-                .show(ui_, |ui_| {
-                    for (offset, row) in day.iter().enumerate() {
-                        entry_row(app, ui_, day_start + offset, row, code_w, hours_w, &mut action);
-                    }
-                });
+                ui_.add_space(4.0);
+                if open {
+                    w::list_frame().show(ui_, |ui_| {
+                        ui_.spacing_mut().item_spacing.y = 0.0;
+                        for (n, row) in day.iter().enumerate() {
+                            if n > 0 {
+                                w::list_divider(ui_);
+                            }
+                            entry_row(app, ui_, row, &mut action);
+                        }
+                    });
+                }
+                ui_.add_space(18.0);
                 day_start = day_end;
             }
             if entries.is_empty() {
                 ui_.add_space(16.0);
-                ui_.label(egui::RichText::new("No entries in this range yet.").weak());
+                ui_.label(RichText::new("No entries in this range yet.").color(t::MUTED));
             } else if entries.len() >= crate::db::JOURNAL_LIMIT {
-                ui_.add_space(8.0);
                 ui_.label(
-                    egui::RichText::new(format!(
+                    RichText::new(format!(
                         "Showing the {} most recent entries — narrow the range or search \
                          to see older ones.",
                         crate::db::JOURNAL_LIMIT
                     ))
-                    .weak(),
+                    .color(t::MUTED),
                 );
             }
         });
 
     match action {
-        Some(Action::Edit(i)) => {
-            let row = &app.entries[i];
-            app.editing_entry = Some((row.entry.id, EntryForm::from_entry(row)));
-            app.confirm_delete_entry = None;
+        Some(Action::Edit(id)) => {
+            if let Some(row) = app.entries.iter().find(|r| r.entry.id == id) {
+                app.editing_entry = Some((id, EntryForm::from_entry(row)));
+                app.confirm_delete_entry = None;
+            }
         }
         Some(Action::SaveEdit) => {
-            if let Some((id, form)) = app.editing_entry.take() {
-                if let (Some(pid), Some(hours)) = (form.project_id, form.parse_hours()) {
-                    match app.db.update_log_entry(
-                        id,
-                        form.work_date,
-                        pid,
-                        form.description.trim(),
-                        hours,
-                        form.is_dev,
-                    ) {
-                        Ok(()) => app.set_status("Entry updated"),
-                        Err(e) => app.set_status(format!("Update failed: {e}")),
-                    }
-                    app.touch();
+            if let Some((id, form)) = app.editing_entry.take()
+                && let (Some(pid), Some(hours)) = (form.project_id, form.parse_hours())
+            {
+                match app.db.update_log_entry(
+                    id,
+                    form.work_date,
+                    pid,
+                    form.description.trim(),
+                    hours,
+                    form.is_dev,
+                ) {
+                    Ok(()) => app.set_status("Entry updated"),
+                    Err(e) => app.set_status(format!("Update failed: {e}")),
                 }
+                app.touch();
             }
         }
         Some(Action::CancelEdit) => app.editing_entry = None,
@@ -232,93 +362,138 @@ fn entry_list(app: &mut WorklogApp, ui_: &mut egui::Ui) {
             }
             app.touch();
         }
+        Some(Action::Select(id, task_id)) => {
+            app.selected_entry_id = Some(id);
+            if task_id.is_some() {
+                app.selected_task_id = task_id;
+            }
+        }
         None => {}
     }
 }
 
-/// One journal row: fixed-width code and hours, dev badge, description,
-/// edit/delete actions. `i` is the row's index into `app.entries`.
+/// One journal row: dot, code, description, checklist count, R&D badge,
+/// hours, edit/delete. Becomes the inline editor while being edited.
 fn entry_row(
     app: &mut WorklogApp,
     ui_: &mut egui::Ui,
-    i: usize,
-    row: &crate::db::LogEntryRow,
-    code_w: usize,
-    hours_w: usize,
+    row: &LogEntryRow,
     action: &mut Option<Action>,
 ) {
-    if app.editing_entry.as_ref().is_some_and(|(id, _)| *id == row.entry.id) {
-        // Inline editor
-        egui::Frame::group(ui_.style()).show(ui_, |ui_| {
-            ui_.set_width(ui_.available_width());
-            let mut form = app.editing_entry.as_ref().unwrap().1.clone();
-            let submit = ui::entry_form_fields(app, ui_, &mut form, "edit_entry", None, None);
-            let valid = form.is_valid();
-            app.editing_entry = Some((row.entry.id, form));
-            ui_.horizontal(|ui_| {
-                if ui_.add_enabled(valid, egui::Button::new("Save")).clicked()
-                    || (submit && valid)
-                {
-                    *action = Some(Action::SaveEdit);
-                }
-                if ui_.button("Cancel").clicked() {
-                    *action = Some(Action::CancelEdit);
-                }
+    if let Some((_, form)) = app
+        .editing_entry
+        .as_ref()
+        .filter(|(id, _)| *id == row.entry.id)
+    {
+        let mut form = form.clone();
+        egui::Frame::new()
+            .fill(t::SELECTED_ROW)
+            .inner_margin(Margin::symmetric(14, 12))
+            .show(ui_, |ui_| {
+                ui_.set_width(ui_.available_width());
+                ui_.horizontal_wrapped(|ui_| {
+                    ui_.spacing_mut().item_spacing = vec2(10.0, 10.0);
+                    let submit =
+                        ui::entry_form_fields(app, ui_, &mut form, "edit_entry", None, None, false, 200.0);
+                    let valid = form.is_valid();
+                    if ui_
+                        .add_enabled(valid, w::primary("Save").min_size(vec2(0.0, 36.0)))
+                        .clicked()
+                        || (submit && valid)
+                    {
+                        *action = Some(Action::SaveEdit);
+                    }
+                    if ui_
+                        .add(w::secondary("Cancel").min_size(vec2(0.0, 36.0)))
+                        .clicked()
+                        || ui_.input(|i| i.key_pressed(egui::Key::Escape))
+                    {
+                        *action = Some(Action::CancelEdit);
+                    }
+                });
             });
-        });
+        if !matches!(action, Some(Action::SaveEdit | Action::CancelEdit)) {
+            app.editing_entry = Some((row.entry.id, form));
+        }
         return;
     }
 
-    ui_.horizontal(|ui_| {
-        ui_.label(
-            egui::RichText::new(format!("{:<code_w$}", row.project_code))
-                .strong()
-                .monospace()
-                .color(ui::project_color(ui_, row.entry.project_id)),
-        )
-        .on_hover_text(format!(
-            "recorded {}",
-            row.entry
-                .created_at
-                .with_timezone(&chrono::Local)
-                .format("%Y-%m-%d %H:%M")
-        ));
-        ui_.label(
-            egui::RichText::new(format!("{:>hours_w$} h", fmt_hours(row.entry.hours)))
-                .monospace(),
-        );
-        // fixed slot whether or not the badge is there
+    let sw = app.project_swatch(row.entry.project_id);
+    let selected = app.show_notes_panel && app.selected_entry_id == Some(row.entry.id);
+    let checklist = row
+        .entry
+        .task_id
+        .and_then(|id| app.entry_checklists.get(&id).copied());
+    let (_, resp) = w::list_row(ui_, ("entry", row.entry.id), 50.0, selected, |ui_| {
+        ui_.spacing_mut().item_spacing.x = 12.0;
+        w::dot(ui_, sw.base, 8.0);
         ui_.allocate_ui_with_layout(
-            egui::vec2(26.0, 16.0),
-            egui::Layout::left_to_right(egui::Align::Center),
+            vec2(86.0, 20.0),
+            Layout::left_to_right(Align::Center),
             |ui_| {
-                if row.entry.is_dev {
-                    ui::dev_badge(ui_);
-                }
+                ui_.add(
+                    egui::Label::new(w::mono_semi(&row.project_code, 12.5).color(sw.light))
+                        .truncate(),
+                )
+                .on_hover_text(format!(
+                    "{} — recorded {}",
+                    row.project_name,
+                    row.entry
+                        .created_at
+                        .with_timezone(&chrono::Local)
+                        .format("%Y-%m-%d %H:%M")
+                ));
             },
         );
-        ui_.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui_| {
+        ui_.with_layout(Layout::right_to_left(Align::Center), |ui_| {
+            ui_.spacing_mut().item_spacing.x = 2.0;
             if ui::confirm_delete_button(ui_, &mut app.confirm_delete_entry, row.entry.id) {
                 *action = Some(Action::Delete(row.entry.id));
             }
-            if ui_.button("edit").clicked() {
-                *action = Some(Action::Edit(i));
+            if w::icon_button(ui_, icon::PENCIL_SIMPLE, "Edit entry").clicked() {
+                *action = Some(Action::Edit(row.entry.id));
             }
-            ui_.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui_| {
-                let from_task = row.entry.task_id.is_some();
-                let mut label = egui::Label::new(&row.entry.description).truncate();
-                if from_task {
-                    label = label.sense(egui::Sense::click());
-                }
-                let hover = if from_task {
-                    format!("{}\n\nclick to show the task's notes", row.entry.description)
+            ui_.spacing_mut().item_spacing.x = 12.0;
+            ui_.allocate_ui_with_layout(
+                vec2(48.0, 20.0),
+                Layout::right_to_left(Align::Center),
+                |ui_| {
+                    ui_.label(
+                        w::mono_semi(format!("{} h", fmt_hours(row.entry.hours)), 14.0)
+                            .color(t::TEXT),
+                    );
+                },
+            );
+            if row.entry.is_dev {
+                w::rd_badge(ui_);
+            }
+            if let Some((done, total)) = checklist {
+                w::icon_label(
+                    ui_,
+                    &format!("{} {done}/{total}", icon::CHECK_SQUARE),
+                    12.0,
+                    if done == total { t::ACCENT_TEXT } else { t::MUTED },
+                )
+                .on_hover_text("Checklist in the task's notes");
+            }
+            ui_.with_layout(Layout::left_to_right(Align::Center), |ui_| {
+                let hover = if row.entry.task_id.is_some() {
+                    format!("{}\n\nClick to show the task's notes", row.entry.description)
                 } else {
                     row.entry.description.clone()
                 };
-                if ui_.add(label).on_hover_text(hover).clicked() {
-                    app.selected_task_id = row.entry.task_id;
-                }
+                ui_.add(
+                    egui::Label::new(RichText::new(&row.entry.description).size(14.0).color(t::TEXT))
+                        .truncate(),
+                )
+                .on_hover_text(hover);
             });
         });
     });
+    if resp.clicked() {
+        *action = Some(Action::Select(row.entry.id, row.entry.task_id));
+    }
+    if resp.double_clicked() {
+        *action = Some(Action::Edit(row.entry.id));
+    }
 }

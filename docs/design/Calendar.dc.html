@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>worklog — Calendar</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#111113}
+a{color:#aab6ff}a:hover{color:#c8d0ff}
+.hov:hover{background:#1f1f25 !important}
+.ib:hover{background:#2a2a32 !important;color:#ececf1 !important}
+.tab:hover{color:#ececf1 !important}
+.day:hover{background:#1e1e24 !important;cursor:pointer}
+input::placeholder{color:#85858f}
+input:focus{outline:none;border-color:#8b9cff !important;box-shadow:0 0 0 3px rgba(139,156,255,.22)}
+</style>
+</helmet>
+<div style="min-height: 1000px; display: flex; flex-direction: column; background: #111113; color: #ececf1; font-family: Inter, system-ui, sans-serif; font-size: 14px; line-height: 1.4">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 10px 20px; background: #16161a; border-bottom: 1px solid #24242a">
+  <div style="display: flex; align-items: center; gap: 10px">
+    <span style="width: 28px; height: 28px; border-radius: 8px; background: #8b9cff; color: #0f1330; display: grid; place-items: center">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path></svg>
+    </span>
+    <span style="font-weight: 700; font-size: 15px; letter-spacing: -0.01em">worklog</span>
+  </div>
+  <nav aria-label="Sections" style="display: flex; gap: 2px; padding: 3px; background: #1d1d22; border: 1px solid #2a2a31; border-radius: 10px">
+    <a class="tab" href="Main.dc.html" style="display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px; border-radius: 7px; color: #a9a9b5; font-size: 13px; font-weight: 500; text-decoration: none">Journal<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #85858f">1</span></a>
+    <a class="tab" href="Tasks.dc.html" style="display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px; border-radius: 7px; color: #a9a9b5; font-size: 13px; font-weight: 500; text-decoration: none">Tasks<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #85858f">2</span></a>
+    <a class="tab" href="Reports.dc.html" style="display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px; border-radius: 7px; color: #a9a9b5; font-size: 13px; font-weight: 500; text-decoration: none">Reports<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #85858f">3</span></a>
+    <a href="Calendar.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px; border-radius: 7px; background: #2c2c35; color: #ffffff; font-size: 13px; font-weight: 600; text-decoration: none">Calendar<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a3a3ae">4</span></a>
+  </nav>
+  <div style="flex: 1"></div>
+  <div style="display: flex; align-items: center; gap: 10px; padding: 3px 3px 3px 14px; border-radius: 999px; background: rgba(139,156,255,0.10); border: 1px solid rgba(139,156,255,0.34)">
+    <span style="width: 8px; height: 8px; border-radius: 50%; background: #8b9cff; box-shadow: 0 0 0 4px rgba(139,156,255,0.2)"></span>
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: #cfe38f">HICA-003</span>
+    <span style="font-size: 13px; color: #d6d6de">task 03</span>
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; color: #ffffff; font-variant-numeric: tabular-nums">0:42:18</span>
+    <button aria-label="Pause timer" style="width: 30px; height: 30px; border-radius: 50%; border: 0; background: #8b9cff; color: #0f1330; display: grid; place-items: center; cursor: pointer"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="4" width="5" height="16" rx="1.5"></rect><rect x="14" y="4" width="5" height="16" rx="1.5"></rect></svg></button>
+    <button aria-label="Stop and log time" style="width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(139,156,255,0.4); background: transparent; color: #c8d0ff; display: grid; place-items: center; cursor: pointer"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2.5"></rect></svg></button>
+  </div>
+  <button class="ib" style="height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-radius: 9px; border: 1px solid #2a2a31; background: #1d1d22; color: #d6d6de; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>Projects</button>
+  <button class="ib" aria-label="Search" style="width: 36px; height: 36px; border-radius: 9px; border: 1px solid #2a2a31; background: #1d1d22; color: #a9a9b5; display: grid; place-items: center; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m20 20-4-4"></path></svg></button>
+  <button class="ib" aria-label="Help and shortcuts" style="width: 36px; height: 36px; border-radius: 9px; border: 1px solid #2a2a31; background: #1d1d22; color: #a9a9b5; display: grid; place-items: center; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17.5h.01"></path></svg></button>
+</header>
+
+<main style="flex: 1; width: 100%; max-width: 1400px; margin: 0 auto; box-sizing: border-box; padding: 24px; display: flex; flex-direction: column; gap: 18px">
+
+  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px">
+    <h2 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.02em">November <span style="color: #9a9aa6; font-weight: 500">2026</span></h2>
+    <div style="display: flex; align-items: center; gap: 4px; padding: 3px; background: #18181c; border: 1px solid #2a2a31; border-radius: 10px">
+      <button class="ib" aria-label="Previous month" style="width: 30px; height: 30px; border-radius: 7px; border: 0; background: transparent; color: #a9a9b5; display: grid; place-items: center; cursor: pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg></button>
+      <button class="ib" style="height: 30px; padding: 0 10px; border-radius: 7px; border: 0; background: transparent; color: #ececf1; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">Today</button>
+      <button class="ib" aria-label="Next month" style="width: 30px; height: 30px; border-radius: 7px; border: 0; background: transparent; color: #a9a9b5; display: grid; place-items: center; cursor: pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg></button>
+    </div>
+    <div style="flex: 1"></div>
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; font-size: 12.5px; color: #a9a9b5">
+      <span style="display: flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 3px; background: #5ccfc0"></span>Holiday</span>
+      <span style="display: flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 3px; background: #b294f5"></span>Vacation</span>
+      <span style="display: flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 3px; background: #e48ac6"></span>Sick</span>
+      <span style="display: flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 3px; border: 1.5px dashed #f2b04c; box-sizing: border-box"></span>No hours</span>
+    </div>
+    <button style="height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 16px; border: 0; border-radius: 9px; background: #8b9cff; color: #0f1330; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Mark day off</button>
+  </div>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+    <div style="flex: 999 1 640px; min-width: 0; overflow-x: auto">
+      <div role="grid" aria-label="November 2026" style="min-width: 760px; display: grid; grid-template-columns: 44px repeat(7, minmax(0, 1fr)); gap: 1px; background: #24242a; border: 1px solid #24242a; border-radius: 12px; overflow: hidden">
+
+        <div style="background: #141417"></div>
+        <div style="padding: 9px 10px; background: #141417; font-size: 12px; font-weight: 500; color: #9a9aa6">Mon</div>
+        <div style="padding: 9px 10px; background: #141417; font-size: 12px; font-weight: 500; color: #9a9aa6">Tue</div>
+        <div style="padding: 9px 10px; background: #141417; font-size: 12px; font-weight: 500; color: #9a9aa6">Wed</div>
+        <div style="padding: 9px 10px; background: #141417; font-size: 12px; font-weight: 500; color: #9a9aa6">Thu</div>
+        <div style="padding: 9px 10px; background: #141417; font-size: 12px; font-weight: 500; color: #9a9aa6">Fri</div>
+        <div style="padding: 9px 10px; background: #141417; font-size: 12px; font-weight: 500; color: #85858f">Sat</div>
+        <div style="padding: 9px 10px; background: #141417; font-size: 12px; font-weight: 500; color: #85858f">Sun</div>
+
+        <div style="padding-top: 10px; background: #141417; text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #85858f">W44</div>
+        <div style="min-height: 104px; padding: 8px 10px; background: #131316"><span style="font-size: 13px; color: #85858f">26</span></div>
+        <div style="min-height: 104px; padding: 8px 10px; background: #131316"><span style="font-size: 13px; color: #85858f">27</span></div>
+        <div style="min-height: 104px; padding: 8px 10px; background: #131316"><span style="font-size: 13px; color: #85858f">28</span></div>
+        <div style="min-height: 104px; padding: 8px 10px; background: #131316"><span style="font-size: 13px; color: #85858f">29</span></div>
+        <div style="min-height: 104px; padding: 8px 10px; background: #131316"><span style="font-size: 13px; color: #85858f">30</span></div>
+        <div style="min-height: 104px; padding: 8px 10px; background: #131316"><span style="font-size: 13px; color: #85858f">31</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #151518"><span style="font-size: 13px; font-weight: 600; color: #a9a9b5">1</span></div>
+
+        <div style="padding-top: 10px; background: #141417; text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #85858f">W45</div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #1b1915; box-shadow: inset 0 0 0 1px rgba(242,176,76,0.28); display: flex; flex-direction: column"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">2</span><span style="margin-top: auto; display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; color: #f2b04c"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19z"></path><path d="M12 10v4M12 17h.01"></path></svg>No hours</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #1b1915; box-shadow: inset 0 0 0 1px rgba(242,176,76,0.28); display: flex; flex-direction: column"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">3</span><span style="margin-top: auto; display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; color: #f2b04c"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19z"></path><path d="M12 10v4M12 17h.01"></path></svg>No hours</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #1b1915; box-shadow: inset 0 0 0 1px rgba(242,176,76,0.28); display: flex; flex-direction: column"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">4</span><span style="margin-top: auto; display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; color: #f2b04c"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19z"></path><path d="M12 10v4M12 17h.01"></path></svg>No hours</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #18181c; display: flex; flex-direction: column; gap: 8px"><div style="display: flex; justify-content: space-between"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">5</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600">2 h</span></div><span style="display: flex; align-items: center; gap: 6px; padding: 3px 7px; border-radius: 6px; background: rgba(122,162,247,0.16); font-size: 11.5px"><span style="width: 6px; height: 6px; border-radius: 50%; background: #7aa2f7"></span><span style="font-family: 'JetBrains Mono', monospace; color: #c9d7fb">Dev Work</span><span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; color: #d6d6de">2</span></span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #1b1915; box-shadow: inset 0 0 0 1px rgba(242,176,76,0.28); display: flex; flex-direction: column"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">6</span><span style="margin-top: auto; display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; color: #f2b04c"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19z"></path><path d="M12 10v4M12 17h.01"></path></svg>No hours</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #151518"><span style="font-size: 13px; font-weight: 600; color: #a9a9b5">7</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #151518"><span style="font-size: 13px; font-weight: 600; color: #a9a9b5">8</span></div>
+
+        <div style="padding-top: 10px; background: #141417; text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #85858f">W46</div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #1b1915; box-shadow: inset 0 0 0 1px rgba(242,176,76,0.28); display: flex; flex-direction: column"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">9</span><span style="margin-top: auto; display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; color: #f2b04c"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19z"></path><path d="M12 10v4M12 17h.01"></path></svg>No hours</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #1b1915; box-shadow: inset 0 0 0 1px rgba(242,176,76,0.28); display: flex; flex-direction: column"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">10</span><span style="margin-top: auto; display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; color: #f2b04c"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19z"></path><path d="M12 10v4M12 17h.01"></path></svg>No hours</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #18181c; display: flex; flex-direction: column; gap: 8px"><div style="display: flex; justify-content: space-between"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">11</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600">2 h</span></div><span style="display: flex; align-items: center; gap: 6px; padding: 3px 7px; border-radius: 6px; background: rgba(184,212,106,0.14); font-size: 11.5px"><span style="width: 6px; height: 6px; border-radius: 50%; background: #b8d46a"></span><span style="font-family: 'JetBrains Mono', monospace; color: #dbe9b0">HICA-003</span><span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; color: #d6d6de">2</span></span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #1b1915; box-shadow: inset 0 0 0 1px rgba(242,176,76,0.28); display: flex; flex-direction: column"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">12</span><span style="margin-top: auto; display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; color: #f2b04c"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19z"></path><path d="M12 10v4M12 17h.01"></path></svg>No hours</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #1b1915; box-shadow: inset 0 0 0 1px rgba(242,176,76,0.28); display: flex; flex-direction: column"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">13</span><span style="margin-top: auto; display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; color: #f2b04c"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19z"></path><path d="M12 10v4M12 17h.01"></path></svg>No hours</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #151518"><span style="font-size: 13px; font-weight: 600; color: #a9a9b5">14</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #1c1d29; box-shadow: inset 0 0 0 1.5px #8b9cff; display: flex; flex-direction: column; gap: 8px"><div style="display: flex; justify-content: space-between; align-items: center"><span style="width: 24px; height: 24px; border-radius: 50%; background: #8b9cff; color: #0f1330; display: grid; place-items: center; font-size: 12px; font-weight: 700">15</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600">4 h</span></div><span style="display: flex; align-items: center; gap: 6px; padding: 3px 7px; border-radius: 6px; background: rgba(122,162,247,0.16); font-size: 11.5px"><span style="width: 6px; height: 6px; border-radius: 50%; background: #7aa2f7"></span><span style="font-family: 'JetBrains Mono', monospace; color: #c9d7fb">Dev Work</span><span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; color: #d6d6de">4</span></span></div>
+
+        <div style="padding-top: 10px; background: #141417; text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #85858f">W47</div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #18181c"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">16</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #18181c"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">17</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #18181c"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">18</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #18181c"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">19</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #18181c"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">20</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #151518"><span style="font-size: 13px; font-weight: 600; color: #a9a9b5">21</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #151518"><span style="font-size: 13px; font-weight: 600; color: #a9a9b5">22</span></div>
+
+        <div style="padding-top: 10px; background: #141417; text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #85858f">W48</div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #18181c"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">23</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #18181c"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">24</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #18181c"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">25</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #18181c"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">26</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #1a1922; box-shadow: inset 0 0 0 1.5px rgba(178,148,245,0.7); display: flex; flex-direction: column; gap: 8px"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">27</span><span style="display: flex; align-items: center; gap: 6px; padding: 3px 7px; border-radius: 6px; border: 1px dashed rgba(178,148,245,0.6); background: rgba(178,148,245,0.12); font-size: 11.5px; font-weight: 500; color: #d9c9fb"><span style="width: 6px; height: 6px; border-radius: 2px; background: #b294f5"></span>Vacation</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #151518"><span style="font-size: 13px; font-weight: 600; color: #a9a9b5">28</span></div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #151518"><span style="font-size: 13px; font-weight: 600; color: #a9a9b5">29</span></div>
+
+        <div style="padding-top: 10px; background: #141417; text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #85858f">W49</div>
+        <div class="day" style="min-height: 104px; padding: 8px 10px; background: #18181c"><span style="font-size: 13px; font-weight: 600; color: #c9c9d2">30</span></div>
+        <div style="min-height: 104px; padding: 8px 10px; background: #131316"><span style="font-size: 13px; color: #85858f">1</span></div>
+        <div style="min-height: 104px; padding: 8px 10px; background: #131316"><span style="font-size: 13px; color: #85858f">2</span></div>
+        <div style="min-height: 104px; padding: 8px 10px; background: #131316"><span style="font-size: 13px; color: #85858f">3</span></div>
+        <div style="min-height: 104px; padding: 8px 10px; background: #131316"><span style="font-size: 13px; color: #85858f">4</span></div>
+        <div style="min-height: 104px; padding: 8px 10px; background: #131316"><span style="font-size: 13px; color: #85858f">5</span></div>
+        <div style="min-height: 104px; padding: 8px 10px; background: #131316"><span style="font-size: 13px; color: #85858f">6</span></div>
+      </div>
+    </div>
+
+    <aside style="flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+
+      <section aria-label="Mark day" style="background: #18181c; border: 1px solid rgba(178,148,245,0.45); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px">
+        <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px">
+          <div style="display: flex; flex-direction: column; gap: 3px">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #8e8e9a">Mark day</span>
+            <h3 style="margin: 0; font-size: 17px; font-weight: 600">Friday, Nov 27</h3>
+          </div>
+          <button class="ib" aria-label="Close" style="width: 32px; height: 32px; border-radius: 8px; border: 0; background: transparent; color: #a9a9b5; display: grid; place-items: center; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>
+        </div>
+        <div role="radiogroup" aria-label="Type" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+          <button role="radio" aria-checked="false" class="ib" style="height: 34px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px; border: 1px solid #2c2c34; background: transparent; color: #c9c9d2; font: inherit; font-size: 12.5px; cursor: pointer"><span style="width: 7px; height: 7px; border-radius: 2px; background: #5ccfc0"></span>Holiday</button>
+          <button role="radio" aria-checked="true" style="height: 34px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px; border: 1px solid rgba(178,148,245,0.7); background: rgba(178,148,245,0.16); color: #ece4ff; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer"><span style="width: 7px; height: 7px; border-radius: 2px; background: #b294f5"></span>Vacation</button>
+          <button role="radio" aria-checked="false" class="ib" style="height: 34px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px; border: 1px solid #2c2c34; background: transparent; color: #c9c9d2; font: inherit; font-size: 12.5px; cursor: pointer"><span style="width: 7px; height: 7px; border-radius: 2px; background: #e48ac6"></span>Sick</button>
+          <button role="radio" aria-checked="false" class="ib" style="height: 34px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px; border: 1px solid #2c2c34; background: transparent; color: #c9c9d2; font: inherit; font-size: 12.5px; cursor: pointer"><span style="width: 7px; height: 7px; border-radius: 2px; background: #8e8e9a"></span>Other</button>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <label for="c-label" style="font-size: 12px; font-weight: 500; color: #9a9aa6">Label <span style="color: #85858f; font-weight: 400">(optional)</span></label>
+          <input id="c-label" placeholder="e.g. long weekend" style="height: 38px; box-sizing: border-box; padding: 0 12px; background: #0f0f12; border: 1px solid #2c2c34; border-radius: 9px; color: #ececf1; font: inherit; font-size: 14px">
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px">
+          <span style="font-size: 12px; font-weight: 500; color: #9a9aa6">Length</span>
+          <div style="display: flex; gap: 2px; padding: 3px; background: #0f0f12; border: 1px solid #2a2a31; border-radius: 9px">
+            <button style="height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: #2c2c35; color: #ffffff; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer">Full day</button>
+            <button class="ib" style="height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #a9a9b5; font: inherit; font-size: 12.5px; cursor: pointer">Half day</button>
+          </div>
+          <div style="flex: 1"></div>
+          <button class="ib" style="height: 34px; padding: 0 12px; border-radius: 9px; border: 1px solid #2c2c34; background: transparent; color: #d6d6de; font: inherit; font-size: 13px; cursor: pointer">Range…</button>
+        </div>
+        <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #9a9aa6">Days off clear the “No hours” warning and show up in the weekly summary and timesheet copy.</p>
+        <div style="display: flex; gap: 8px">
+          <button class="ib" style="flex: 1; height: 38px; border-radius: 9px; border: 1px solid #2c2c34; background: transparent; color: #d6d6de; font: inherit; font-size: 13px; cursor: pointer">Cancel</button>
+          <button style="flex: 1; height: 38px; border-radius: 9px; border: 0; background: #8b9cff; color: #0f1330; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer">Save day off</button>
+        </div>
+      </section>
+
+      <section aria-label="Upcoming days off" style="background: #18181c; border: 1px solid #26262d; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px">
+        <h3 style="margin: 0; font-size: 14px; font-weight: 600">Upcoming days off</h3>
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <div class="hov" style="display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 9px">
+            <span style="width: 40px; flex: none; display: flex; flex-direction: column; align-items: center; padding: 4px 0; border-radius: 8px; background: rgba(92,207,192,0.12)"><span style="font-size: 10px; font-weight: 600; letter-spacing: 0.05em; color: #8fe0d5">DEC</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 600">25</span></span>
+            <span style="flex: 1; display: flex; flex-direction: column; gap: 1px"><span style="font-size: 13.5px; font-weight: 500">Christmas Day</span><span style="font-size: 12px; color: #9a9aa6">Friday · Holiday</span></span>
+          </div>
+          <div class="hov" style="display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 9px">
+            <span style="width: 40px; flex: none; display: flex; flex-direction: column; align-items: center; padding: 4px 0; border-radius: 8px; background: rgba(92,207,192,0.12)"><span style="font-size: 10px; font-weight: 600; letter-spacing: 0.05em; color: #8fe0d5">JAN</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 600">1</span></span>
+            <span style="flex: 1; display: flex; flex-direction: column; gap: 1px"><span style="font-size: 13.5px; font-weight: 500">New Year’s Day</span><span style="font-size: 12px; color: #9a9aa6">Friday · Holiday</span></span>
+          </div>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <button class="ib" style="height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 12px; border-radius: 9px; border: 1px solid #2a2a31; background: #1d1d22; color: #d6d6de; font: inherit; font-size: 13px; cursor: pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>Import Québec holidays</button>
+          <button class="ib" style="height: 34px; padding: 0 12px; border-radius: 9px; border: 1px solid #2a2a31; background: transparent; color: #d6d6de; font: inherit; font-size: 13px; cursor: pointer">Office closure…</button>
+        </div>
+      </section>
+
+      <section aria-label="November so far" style="background: #18181c; border: 1px solid #26262d; border-radius: 14px; padding: 18px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; color: #9a9aa6">Logged</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 20px; font-weight: 600">8 h</span></div>
+        <div style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; color: #9a9aa6">No hours</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 20px; font-weight: 600; color: #f2b04c">8 d</span></div>
+        <div style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; color: #9a9aa6">Days off</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 20px; font-weight: 600">0</span></div>
+      </section>
+    </aside>
+  </div>
+</main>
+
+<footer style="display: flex; flex-wrap: wrap; align-items: center; gap: 18px; padding: 8px 20px; background: #16161a; border-top: 1px solid #24242a; font-size: 12px; color: #8e8e9a">
+  <span>Today <strong style="font-family: 'JetBrains Mono', monospace; color: #ececf1; font-weight: 600">4 h</strong></span>
+  <span>This week <strong style="font-family: 'JetBrains Mono', monospace; color: #ececf1; font-weight: 600">6 h</strong></span>
+  <span style="flex: 1"></span>
+  <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px">~/.local/share/worklog/worklog.db</span>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
