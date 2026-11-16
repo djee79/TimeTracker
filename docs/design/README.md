@@ -2,7 +2,7 @@
 
 Instructions for Claude Code. Implement the refreshed interface for the `worklog` Rust desktop time tracker, plus four small features that came out of the redesign.
 
-The HTML mockups in `docs/design/` (`Journal.dc.html`, `Tasks.dc.html`, `Reports.dc.html`, `Calendar.dc.html`, `Projects.dc.html`, `NotesEditor.dc.html`) are the **visual reference**. Open them to read exact colours, sizes and spacing. They are mockups, not code to port: rebuild the look with the app's existing GUI toolkit.
+The HTML mockups in `docs/design/` (`Journal.dc.html`, `Tasks.dc.html`, `Reports.dc.html`, `Calendar.dc.html`, `Projects.dc.html`, `NotesEditor.dc.html`, `DatePicker.dc.html`) are the **visual reference**. Open them to read exact colours, sizes and spacing. They are mockups, not code to port: rebuild the look with the app's existing GUI toolkit.
 
 ---
 
@@ -249,6 +249,35 @@ The monthly and SR&ED cards sit side by side, about 3 : 2, and wrap on narrow wi
   - The checklist count `2 / 3` in `ACCENT_TEXT`.
   - **Discard** (secondary) and **Save** (primary, with a `Ctrl S` hint). Ctrl S saves; Esc with unsaved changes asks for confirmation.
 
+### 4.7 Date picker (replaces `egui_extras::DatePickerButton`)
+
+Mockup: `docs/design/DatePicker.dc.html`. The stock egui_extras picker can't be themed to match: its weekend colour is hard-coded red and its layout (year/month/day combo boxes, `<<< << < > >> >>>`, Save/Cancel) doesn't fit the app. Write our own `date_picker(ui, &mut NaiveDate, &DayMarkers) -> Response` widget and use it everywhere a date is picked: Log work, the "log the time?" banner, edit entry, week/month pickers and Calendar "Mark day". Check the egui_extras source to confirm where the red comes from before replacing it.
+
+- **Trigger:** the existing date button (calendar icon + "Today, Nov 15" / "Thu, Nov 12" / "Nov 12, 2025" when not this year). While the picker is open it gets the accent focus ring.
+- **Popover:**
+  - Opens below the trigger: 316 px wide, `PANEL` background, `BORDER_STRONG` stroke, radius 14, soft shadow, 12 px padding.
+  - Closes on outside click or Esc.
+  - Use an `egui::Area` / `popup_below_widget` and keep it inside the window.
+- **Header:** a ghost title button "November **2026**" (year muted) with a ▾ that switches to the month view, then ‹ › ghost icon buttons (32 px). No `<<<` / `>>>` buttons and no combo boxes.
+- **Quick picks:** small secondary buttons (28 px, radius 7) for **Today**, **Yesterday** and **Last Friday**. One click selects and closes.
+- **Day grid:**
+  - A narrow ISO week-number column (mono 10.5, `FAINT`), then Mo–Su headers (11.5, `MUTED`; Sa/Su in `FAINT`).
+  - Cells are 36 px tall, radius 8, transparent, with `CONTROL_HOVER` on hover.
+  - Text colour: `TEXT` for weekdays, `#a9a9b5` for weekend days and `FAINT` for days outside the month. **No red and no filled backgrounds for weekends.**
+  - Selected: `ACCENT` fill, `ACCENT_INK` text, weight 700.
+  - Today, when not selected: 1.5 px `ACCENT` ring.
+  - A 4 px marker dot under the number:
+    - project colour if the day has hours (the project with the most hours)
+    - `AMBER` for a weekday with no hours (§5.2)
+    - the day-off type colour (§5.3)
+    - none otherwise
+- **Month view:** ‹ 2026 › header and a 3×4 grid of 44 px month buttons. The current selection uses an `ACCENT` fill. Picking a month returns to the day view; clicking the year title is optional.
+- **Footer:** a hairline divider, then a legend (● logged, ● no hours) and the key hints `↵ pick`, `Esc close`.
+- **Behaviour:**
+  - **A single click selects the date and closes the popover**, so there's no Save/Cancel.
+  - Keyboard: arrows move the focused day, PgUp/PgDn change month, Home/End go to the start/end of the week, Enter picks, Esc closes without changing anything.
+  - The markers come from the same query as the Calendar (`DayMarkers` = map of date → marker). Compute them once per visible month and cache.
+
 ---
 
 ## 5. New behaviour
@@ -320,7 +349,7 @@ These are optional; ask before skipping any:
 3. **Journal and Tasks** layouts (§4.1, §4.2).
 4. **Reports** layout (§4.3) plus §5.1 row order (with migration) and §5.2 missing weekdays.
 5. **Projects dialog** (§4.5) plus §5.4 colour.
-6. **Notes editor** (§4.6).
+6. **Notes editor** (§4.6) and the **date picker** (§4.7). If phases 1–5 are already done, do the date picker on its own as the next step.
 7. **Calendar** (§4.4) plus §5.3 days off and the Québec import.
 
 After each phase, list anything you couldn't match from the mockups and why.
